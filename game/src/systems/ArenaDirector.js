@@ -31,7 +31,7 @@ export function makeEnemy(state, type, x, y, elite) {
     elite: !!elite, staggerT: 0, flashT: 0, shieldAngle: Math.PI / 2,
     shieldUp: true, shieldDownT: 0,
     contactCd: 0, teleT: 0, teleState: 0, teleAngle: 0, fireCd: 1 + state.rng() * 1.5,
-    waveT: 0, summoned: false, phase: 1, stoleEchoes: false, splitSpawned: false,
+    waveT: 0, summoned: false, summonWarned: false, summonWarnT: 0, phase: 1, stoleEchoes: false, splitSpawned: false,
     lastPlayerHit: 0, lastEchoHit: 0, crossUsed: 0,
     targetEcho: null, distractT: 0, isMini: false,
   };
@@ -163,12 +163,27 @@ export function updateEnemies(state, dt) {
           e.waveT = 0;
           spawnShockwave(state, e.x, e.y);
         }
-        if (e.type === 'warden' && !e.summoned && e.hp < e.maxHp * 0.5) {
-          e.summoned = true;
-          state.enemies.push(makeEnemy(state, 'sniper', e.x - 120, e.y + 60, false));
-          state.enemies.push(makeEnemy(state, 'sniper', e.x + 120, e.y + 60, false));
-          state.events.push({ type: 'summon', x: e.x, y: e.y });
-          state.waveTotal += 2;
+        // WARDEN PHASE II — telegraphed summon: at 55% HP the Warden starts
+        // summoning (1s of gold warning markers + callout) and the snipers
+        // arrive when the warning ends. The phase flips when they land.
+        if (e.type === 'warden' && !e.summoned) {
+          if (!e.summonWarned && e.hp < e.maxHp * 0.55) {
+            e.summonWarned = true;
+            e.summonWarnT = 1.0;
+            state.events.push({ type: 'summonWarn', x: e.x, y: e.y });
+          }
+          if (e.summonWarned && e.summonWarnT > 0) {
+            e.summonWarnT -= dt;
+            if (e.summonWarnT <= 0) {
+              e.summoned = true;
+              e.phase = 2;
+              state.enemies.push(makeEnemy(state, 'sniper', e.x - 120, e.y + 60, false));
+              state.enemies.push(makeEnemy(state, 'sniper', e.x + 120, e.y + 60, false));
+              state.events.push({ type: 'summon', x: e.x, y: e.y });
+              state.waveTotal += 2;
+              state.banner = { txt: 'THE WARDEN — PHASE II — SNIPER SUMMON', sub: 'Two Chrono Snipers join the fight', ttl: 2.4 };
+            }
+          }
         }
         if (e.type === 'chronarch') {
           const frac = e.hp / e.maxHp;
@@ -176,7 +191,13 @@ export function updateEnemies(state, dt) {
           if (newPhase !== e.phase) {
             e.phase = newPhase;
             state.events.push({ type: 'bossPhase', x: e.x, y: e.y, phase: newPhase });
-            state.banner = { txt: 'THE CHRONARCH — PHASE ' + newPhase, sub: newPhase === 2 ? 'It calls its snipers' : 'IT STEALS YOUR ECHOES!', ttl: 2.4 };
+            // Phase banner names the ability, so the phase change reads at a
+            // glance: Phase II calls snipers, Phase III steals your echoes.
+            state.banner = {
+              txt: 'THE CHRONARCH — PHASE ' + (newPhase === 2 ? 'II — SNIPER CALL' : 'III — ECHO THEFT'),
+              sub: newPhase === 2 ? 'It summons two Chrono Snipers' : 'Your echoes turn against you!',
+              ttl: 2.4,
+            };
             if (newPhase === 2 && !e.summoned) {
               e.summoned = true;
               state.enemies.push(makeEnemy(state, 'sniper', e.x - 140, e.y + 70, false));

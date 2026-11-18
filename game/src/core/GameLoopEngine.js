@@ -47,7 +47,7 @@ export function newRun(difficulty, seed) {
     enemies: [], bolts: [], particles: [], floats: [], rifts: [], shockwaves: [],
     pillars: [], upgradesOwned: [], upgradeLevels: {},
     upgradeValues: upgradeValues({}),
-    pendingOffers: [], recording: [], recorder: createRecorder(),
+    pendingOffers: [], draftKind: 'clear', recording: [], recorder: createRecorder(),
     rewindT: 0, rewindKind: 'timeout', deathT: 0,
     boss: null, bossDefeated: false,
     perLoop: [], loopKills: 0, loopScore: 0, waveTotal: 0,
@@ -175,17 +175,32 @@ function finishRewind(state) {
   layoutPillars(state);
   spawnWave(state, state.rewindKind !== 'clear');
   if (state.loop > MAX_LOOPS) { state.loop = MAX_LOOPS; }
-  if (cleared && state.loop <= MAX_LOOPS) {
-    state.pendingOffers = rollOffers(state);
-    state.screen = 'draft';
-    state.banner = { txt: 'LOOP ' + state.loop + ' INCOMING', sub: 'Choose a paradox upgrade', ttl: 2.2 };
+  // DRAFT EVERY LOOP (Pass 2): a draft follows EVERY rewind, not just a
+  // clear. A timeout rewind is a FRAYED draft — the fray penalty (extra
+  // Chasers next loop) still applies; a clear or manual rewind is a clean
+  // draft. The draft pauses the action; the next loop starts on pick.
+  // (If the upgrade pool is ever exhausted there is nothing to draft:
+  // play on instead of soft-locking on an empty draft screen.)
+  if (state.loop <= MAX_LOOPS) {
+    const offers = rollOffers(state);
+    if (offers.length) {
+      state.pendingOffers = offers;
+      state.draftKind = cleared ? 'clear' : state.rewindKind;
+      state.screen = 'draft';
+      state.banner = { txt: 'LOOP ' + state.loop + ' INCOMING', sub: 'Choose a paradox upgrade', ttl: 2.2 };
+    } else {
+      state.screen = 'play';
+      state.banner = { txt: 'LOOP ' + state.loop, sub: '', ttl: 1.6 };
+    }
   } else {
     state.screen = 'play';
     const name = state.loop === 5 ? ' — THE WARDEN' : state.loop === 10 ? ' — THE CHRONARCH' : '';
     state.banner = { txt: 'LOOP ' + state.loop + name, sub: cleared ? '' : 'The unfinished fight continues', ttl: 2.4 };
   }
   // A surge overrides the loop banner: the player must SEE the payoff.
-  if (state.surgePending) {
+  // With a draft in between, the banner waits for the pick — the draft
+  // screen never draws banners, so the surge is announced on resume.
+  if (state.surgePending && state.screen !== 'draft') {
     state.surgePending = false;
     state.banner = { txt: 'PARADOX SURGE! +1 ECHO SLOT', sub: 'Weave spent — ' + echoSlots(state) + ' echo slots this loop', ttl: 2.8 };
     addFloat(state, 640, 300, '+1 ECHO SLOT', '#F5B81D');
@@ -283,6 +298,8 @@ function drainEvents(state, audio) {
       case 'shieldBreak': state.shieldBreaks++; state.slowmoT = Math.max(state.slowmoT, 0.08); audio.sfx('shieldBreak'); break;
       case 'crossfire': audio.sfx('crossfire'); break;
       case 'surge': audio.sfx('upgrade'); break;
+      case 'bossPhase': audio.sfx('upgrade'); break;
+      case 'summonWarn': audio.sfx('sniperTele'); break;
       case 'kill':
         // Kill beat: a brief micro-pulse, gated by a cooldown — a kill must
         // feel like a hit, never a freeze. 0.03 sim-s is ~0.07s wall at 45%
@@ -400,7 +417,13 @@ export function step(state, input, audio, dt) {
       applyUpgrade(state, id);
       state.pendingOffers = [];
       state.screen = 'play';
-      state.banner = { txt: 'LOOP ' + state.loop, sub: '', ttl: 1.6 };
+      if (state.surgePending) {
+        state.surgePending = false;
+        state.banner = { txt: 'PARADOX SURGE! +1 ECHO SLOT', sub: 'Weave spent — ' + echoSlots(state) + ' echo slots this loop', ttl: 2.8 };
+        addFloat(state, 640, 300, '+1 ECHO SLOT', '#F5B81D');
+      } else {
+        state.banner = { txt: 'LOOP ' + state.loop, sub: '', ttl: 1.6 };
+      }
     }
     updateFx(state, dt);
     drainEvents(state, audio);

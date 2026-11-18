@@ -236,6 +236,16 @@ function drawEnemies(ctx, state) {
         ctx.strokeStyle = COLOURS.gold; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(e.x, e.y, R + 14, 0, Math.PI * 2); ctx.stroke();
       }
+      // Warden summon telegraph: gold warning markers at the two spawn
+      // points + a callout, for the 1s before the snipers actually arrive.
+      if (e.type === 'warden' && e.summonWarnT > 0) {
+        const pulse = 0.5 + 0.4 * Math.sin(state.time * 12);
+        ctx.strokeStyle = 'rgba(245,184,29,' + pulse + ')'; ctx.lineWidth = 3;
+        for (const dx of [-120, 120]) {
+          ctx.beginPath(); ctx.arc(e.x + dx, e.y + 60, 16 + 4 * Math.sin(state.time * 12), 0, Math.PI * 2); ctx.stroke();
+        }
+        text(ctx, '⚠ SUMMONING SNIPERS…', e.x, e.y - e.radius - 34, 'bold 16px system-ui, sans-serif', COLOURS.gold, 'center');
+      }
     } else if (e.type === 'sniper') {
       ctx.fillStyle = flash ? '#FFFFFF' : COLOURS.sniper;
       ctx.beginPath();
@@ -379,6 +389,19 @@ function drawPlayHUD(ctx, state, input) {
     ctx.fillRect(440, 122, 400, 10);
     ctx.fillStyle = COLOURS.crimson;
     ctx.fillRect(440, 122, 400 * clamp(state.boss.hp / state.boss.maxHp, 0, 1), 10);
+    // Phase pips: segment dividers on the bar + a PHASE label, so the
+    // boss's structure is visible at a glance. Warden has 2 phases,
+    // Chronarch 3; a pip fills gold once its phase boundary is passed.
+    const phases = state.boss.type === 'chronarch' ? 3 : 2;
+    const cur = state.boss.phase || 1;
+    for (let i = 1; i < phases; i++) {
+      const px = 440 + (400 * i) / phases;
+      ctx.fillStyle = cur > i ? COLOURS.gold : 'rgba(22,28,37,0.9)';
+      ctx.beginPath(); ctx.arc(px, 127, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = COLOURS.gold; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(px, 127, 6, 0, Math.PI * 2); ctx.stroke();
+    }
+    text(ctx, 'PHASE ' + ['I', 'II', 'III'][cur - 1], 850, 127, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'left');
   }
   // Minimap, top-right.
   const mx = 1096, my = 24, mw = 160, mh = 100;
@@ -500,7 +523,7 @@ function drawTitle(ctx, state, input) {
     'SHIFT / SPACE — dash (brief invulnerability)     ·     Q / R — rewind early',
     'E — Stasis Grenade (once unlocked)     ·     P — pause     ·     M — mute',
     'Guardians block shots from the FRONT — let an echo distract them, then backstab.',
-    'Clear a loop to draft 1 of 3 upgrades. Beat THE CHRONARCH on Loop 10 to win.',
+    'Every loop ends in a draft: pick 1 of 3 upgrades. Beat THE CHRONARCH on Loop 10 to win.',
   ];
   how.forEach((h, i) => text(ctx, h, 190, 328 + i * 21, '14px system-ui, sans-serif', '#EDEAE2', 'left'));
   text(ctx, 'MEET THE ENEMY', 190, 442, 'bold 16px system-ui, sans-serif', COLOURS.gold, 'left');
@@ -537,8 +560,18 @@ function drawTitle(ctx, state, input) {
 function drawDraft(ctx, state, input) {
   ctx.fillStyle = 'rgba(20,24,31,0.72)';
   ctx.fillRect(0, 0, W, H);
-  text(ctx, 'PARADOX DRAFT — LOOP ' + (state.loop - 1) + ' CLEARED', 640, 110, 'bold 34px system-ui, sans-serif', '#FFFFFF', 'center');
-  text(ctx, 'Choose 1 of 3 — click a card or press 1 / 2 / 3', 640, 148, '17px system-ui, sans-serif', '#C9C2B2', 'center');
+  // The title names the draft kind: a timeout rewind is a FRAYED draft.
+  const dk = state.draftKind || 'clear';
+  const dTitle = dk === 'timeout'
+    ? 'FRAYED DRAFT — LOOP ' + (state.loop - 1) + ' TIMED OUT'
+    : 'PARADOX DRAFT — LOOP ' + (state.loop - 1) + (dk === 'manual' ? ' REWOUND EARLY' : ' CLEARED');
+  text(ctx, dTitle, 640, 110, 'bold 34px system-ui, sans-serif', dk === 'timeout' ? COLOURS.crimson : '#FFFFFF', 'center');
+  text(ctx, dk === 'timeout'
+    ? 'The timeline frayed — extra Chasers wait next loop. Choose 1 of 3 — click a card or press 1 / 2 / 3'
+    : 'Choose 1 of 3 — click a card or press 1 / 2 / 3', 640, 148, '17px system-ui, sans-serif', '#C9C2B2', 'center');
+  if (state.surgePending) {
+    text(ctx, '⚡ PARADOX SURGE banked — +1 ECHO SLOT this loop', 640, 174, 'bold 16px system-ui, sans-serif', COLOURS.gold, 'center');
+  }
   state.pendingOffers.forEach((u, i) => {
     const x = 190 + i * 310, y = 190, w = 280, h = 280;
     const lvl = state.upgradeLevels[u.id] || 0;
@@ -570,8 +603,24 @@ function drawDraft(ctx, state, input) {
     return u ? u.name : id.toUpperCase();
   }).join('  ·  ') : 'none yet';
   text(ctx, 'OWNED:  ' + owned, 640, 516, '15px system-ui, sans-serif', '#C9C2B2', 'center');
-  const next = state.loop === 5 ? 'NEXT: LOOP 5 — THE WARDEN' : state.loop === 10 ? 'NEXT: LOOP 10 — THE CHRONARCH' : 'NEXT: LOOP ' + state.loop;
-  text(ctx, next + '   ·   ECHOES ' + state.echoes.length + '/' + echoSlots(state), 640, 548, 'bold 16px system-ui, sans-serif', COLOURS.cyan, 'center');
+  // NEXT-LOOP PREVIEW (Pass 2): finishRewind already spawned the next wave
+  // before showing the draft, so counting state.enemies IS the exact
+  // composition the player is about to face — no separate estimate to drift.
+  const counts = {};
+  for (const e of state.enemies) counts[e.type] = (counts[e.type] || 0) + 1;
+  const order = ['warden', 'chronarch', 'guardian', 'sniper', 'bomber', 'chaser', 'splitter', 'phantom'];
+  const icons = { guardian: '🛡', sniper: '🎯', bomber: '💣', chaser: '➤', splitter: '✦', phantom: '👻', warden: '♛', chronarch: '🕐' };
+  const names = { guardian: ['Guardian', 'Guardians'], sniper: ['Sniper', 'Snipers'], bomber: ['Bomber', 'Bombers'], chaser: ['Chaser', 'Chasers'], splitter: ['Splitter', 'Splitters'], phantom: ['Stolen Echo', 'Stolen Echoes'], warden: ['THE WARDEN', 'THE WARDEN'], chronarch: ['THE CHRONARCH', 'THE CHRONARCH'] };
+  let prev = 'NEXT — LOOP ' + state.loop + ': ';
+  let first = true;
+  for (const t of order) {
+    if (!counts[t]) continue;
+    prev += (first ? '' : '  ·  ') + icons[t] + ' ' + counts[t] + ' ' + names[t][counts[t] > 1 ? 1 : 0];
+    first = false;
+  }
+  if (first) prev += '— arena clear —';
+  text(ctx, prev, 640, 548, 'bold 16px system-ui, sans-serif', COLOURS.cyan, 'center');
+  text(ctx, 'ECHOES ' + state.echoes.length + '/' + echoSlots(state), 640, 576, 'bold 14px system-ui, sans-serif', '#C9C2B2', 'center');
 }
 
 // ---- Summary ----

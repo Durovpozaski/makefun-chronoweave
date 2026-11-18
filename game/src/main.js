@@ -155,6 +155,7 @@ window.__chronoweave = {
   setBest(n) { state.best = n; try { window.localStorage.setItem('chronoweave-best', String(n)); } catch (e) { /* ignore */ } },
   forceDraft() {
     state.pendingOffers = rollOffers(state);
+    state.draftKind = 'clear';
     state.screen = 'draft';
   },
   forceWin() {
@@ -185,7 +186,10 @@ function applyShotPreset() {
   } else if (shot === 'upgrade') {
     window.__chronoweave.setBest(15840);
     startRun(state, 'steady', 7);
-    state.loop = 6; state.score = 8300;
+    // Stage a real Loop 6 draft: forceLoop spawns the Loop 6 wave first, so
+    // the NEXT-LOOP preview on the draft screen counts the actual wave.
+    window.__chronoweave.forceLoop(6);
+    state.score = 8300;
     window.__chronoweave.forceDraft();
   } else if (shot === 'win') {
     window.__chronoweave.setBest(15840);
