@@ -34,6 +34,15 @@ export const SCORING = {
   killBase: 100, loopClearBonus: 500, winBonusPerSecond: 10,
   gradeSMin: 9000, gradeAMin: 5500,
 };
+// WEAVE — the hook's meter. A crossfire (player + echo hit the same enemy
+// within 1.5s) charges it; 3 crossfires fill it. A rewind spent at full
+// Weave becomes a PARADOX SURGE (+1 echo slot, hard cap 4 total slots).
+// A timeout rewind frays the timeline: +1 fray (cap 3), and the next loop
+// spawns one extra Chaser per fray.
+export const WEAVE_PER_CROSSFIRE = 34;
+export const WEAVE_MAX = 100;
+export const MAX_ECHO_SLOTS = 4;
+export const FRAY_CAP = 3;
 
 export function mulberry32(seed) {
   let a = seed >>> 0;

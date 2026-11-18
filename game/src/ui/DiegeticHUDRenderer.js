@@ -5,6 +5,7 @@
 // screen explains the mechanic in a 3-panel diagram (FIGHT 10s → REWIND →
 // ECHO REPLAYS IT) so the loop is understood in one glance at 382x238.
 import { W, H, ARENA, COLOURS, MAX_LOOPS, DIFFICULTY_ORDER, DIFFICULTIES, clamp } from '../config.js';
+import { echoSlots } from '../core/GameLoopEngine.js';
 import { UPGRADES } from '../systems/ParadoxUpgradeSystem.js';
 
 function rr(ctx, x, y, w, h, r) {
@@ -346,9 +347,16 @@ function drawPlayHUD(ctx, state, input) {
   for (const t of order) if (counts[t]) { inc += (first ? '' : '  ') + icons[t] + '×' + counts[t]; first = false; }
   if (first) inc += '— arena clear —';
   text(ctx, inc, 24, 134, 'bold 14px system-ui, sans-serif', '#14181F', 'left');
-  // Radial timeline clock, top-center.
+  // Radial timeline clock, top-center. Under 3s it pulses red: the player
+  // should WANT to rewind deliberately (Q) before the clock runs out.
   const cx = 640, cy = 56, R = 34;
   const frac = clamp(state.loopTimeLeft / state.diff.loop, 0, 1);
+  const urgent = state.screen === 'play' && state.loopTimeLeft < 3 && state.loopElapsed >= 2;
+  if (urgent) {
+    ctx.strokeStyle = 'rgba(255,46,77,' + (0.5 + 0.4 * Math.sin(state.time * 10)) + ')';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(cx, cy, R + 12 + 2 * Math.sin(state.time * 10), 0, Math.PI * 2); ctx.stroke();
+  }
   ctx.fillStyle = 'rgba(22,28,37,0.88)';
   ctx.beginPath(); ctx.arc(cx, cy, R + 6, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 5;
@@ -357,6 +365,13 @@ function drawPlayHUD(ctx, state, input) {
   ctx.beginPath(); ctx.arc(cx, cy, R, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2); ctx.stroke();
   text(ctx, 'LOOP ' + state.loop + '/' + MAX_LOOPS, cx, cy - 4, 'bold 12px system-ui, sans-serif', '#FFFFFF', 'center');
   text(ctx, Math.max(0, state.loopTimeLeft).toFixed(1) + 's', cx, cy + 13, 'bold 14px system-ui, sans-serif', '#FFFFFF', 'center');
+  // Fray + manual-rewind hint, under the clock.
+  if (state.fray > 0) text(ctx, 'TIMELINE FRAY ×' + state.fray, cx, 150, 'bold 13px system-ui, sans-serif', COLOURS.crimson, 'center');
+  if (urgent) {
+    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(state.time * 10);
+    text(ctx, 'REWIND NOW  (Q)', cx, state.fray > 0 ? 174 : 150, 'bold 15px system-ui, sans-serif', COLOURS.gold, 'center');
+    ctx.globalAlpha = 1;
+  }
   // Boss bar under the clock.
   if (state.boss && state.boss.hp > 0) {
     // Bar only: the boss's name is drawn under the boss itself.
@@ -384,11 +399,24 @@ function drawPlayHUD(ctx, state, input) {
   for (const ec of state.echoes) dot(ec.x, ec.y, '#7DF3FF', 3);
   if (p.alive) dot(p.x, p.y, COLOURS.cyan, 4);
   // Echo slots + combo, under the minimap.
+  const slotsN = echoSlots(state);
   let slots = 'ECHOES  ';
-  for (let i = 0; i < state.upgradeValues.maxEchoes; i++) slots += i < state.echoes.length ? '▮' : '▯';
-  text(ctx, slots + '   ' + state.echoes.length + '/' + state.upgradeValues.maxEchoes, 1256, 146, 'bold 14px system-ui, sans-serif', '#14181F', 'right');
+  for (let i = 0; i < slotsN; i++) slots += i < state.echoes.length ? '▮' : '▯';
+  text(ctx, slots + '   ' + state.echoes.length + '/' + slotsN, 1256, 146, 'bold 14px system-ui, sans-serif', '#14181F', 'right');
   const cm = (1 + state.combo * 0.1).toFixed(1);
   text(ctx, 'COMBO  ×' + cm + (state.combo > 0 ? '  (' + state.combo + ' hits)' : ''), 1256, 170, 'bold 15px system-ui, sans-serif', state.combo >= 10 ? COLOURS.crimson : '#14181F', 'right');
+  // WEAVE meter: crossfires charge it (3 fill it). At 100 the next rewind
+  // is a PARADOX SURGE — +1 echo slot. The label flashes gold when ready.
+  const wv = clamp(state.weave || 0, 0, 100);
+  const weaveReady = wv >= 100;
+  const weaveCol = weaveReady ? (Math.sin(state.time * 8) > 0 ? COLOURS.gold : '#FFFFFF') : '#14181F';
+  text(ctx, weaveReady ? '⚡ PARADOX READY' : 'WEAVE  ' + Math.floor(wv) + '%', 1256, 194, 'bold 14px system-ui, sans-serif', weaveCol, 'right');
+  ctx.fillStyle = 'rgba(22,28,37,0.35)';
+  rr(ctx, 1096, 202, 160, 10, 5); ctx.fill();
+  if (wv > 0) {
+    ctx.fillStyle = weaveReady ? COLOURS.gold : COLOURS.cyan;
+    rr(ctx, 1096, 202, 160 * (wv / 100), 10, 5); ctx.fill();
+  }
   // HP bar, bottom-left.
   ctx.fillStyle = 'rgba(22,28,37,0.8)';
   rr(ctx, 24, 664, 260, 22, 8); ctx.fill();
@@ -442,8 +470,9 @@ function drawTitle(ctx, state, input) {
   rr(ctx, 150, 36, 980, 648, 18); ctx.fill();
   ctx.strokeStyle = COLOURS.gold; ctx.lineWidth = 2;
   rr(ctx, 150, 36, 980, 648, 18); ctx.stroke();
-  text(ctx, 'CHRONOWEAVE', 640, 100, 'bold 62px system-ui, sans-serif', '#FFFFFF', 'center');
-  text(ctx, 'Every 10 seconds, rewind — and fight beside your own ghost.', 640, 142, 'italic 19px system-ui, sans-serif', '#7DF3FF', 'center');
+  text(ctx, 'CHRONOWEAVE', 640, 96, 'bold 62px system-ui, sans-serif', '#FFFFFF', 'center');
+  text(ctx, 'YOUR PAST SELF FIGHTS BESIDE YOU.', 640, 134, 'bold 27px system-ui, sans-serif', COLOURS.gold, 'center');
+  text(ctx, 'Rewind to multiply. Crossfire to charge the Weave.', 640, 160, 'italic 17px system-ui, sans-serif', '#7DF3FF', 'center');
   // 3-panel diagram: FIGHT → REWIND → ECHO REPLAYS.
   const panels = [
     { n: '1', title: 'FIGHT 10s', sub: 'WASD move · mouse aim · click shoot', col: COLOURS.crimson },
@@ -452,19 +481,20 @@ function drawTitle(ctx, state, input) {
   ];
   panels.forEach((pn, i) => {
     const x = 190 + i * 310;
+    const y = 182;
     ctx.fillStyle = 'rgba(255,255,255,0.08)';
-    rr(ctx, x, 168, 280, 96, 10); ctx.fill();
+    rr(ctx, x, y, 280, 96, 10); ctx.fill();
     ctx.strokeStyle = pn.col; ctx.lineWidth = 2;
-    rr(ctx, x, 168, 280, 96, 10); ctx.stroke();
+    rr(ctx, x, y, 280, 96, 10); ctx.stroke();
     ctx.fillStyle = pn.col;
-    ctx.beginPath(); ctx.arc(x + 28, 198, 16, 0, Math.PI * 2); ctx.fill();
-    text(ctx, pn.n, x + 28, 199, 'bold 17px system-ui, sans-serif', '#14181F', 'center');
-    text(ctx, pn.title, x + 52, 192, 'bold 17px system-ui, sans-serif', '#FFFFFF', 'left');
-    text(ctx, pn.sub, x + 16, 232, '13px system-ui, sans-serif', '#C9C2B2', 'left');
-    if (i < 2) text(ctx, '➜', x + 282, 216, 'bold 22px system-ui, sans-serif', '#FFFFFF', 'center');
+    ctx.beginPath(); ctx.arc(x + 28, y + 30, 16, 0, Math.PI * 2); ctx.fill();
+    text(ctx, pn.n, x + 28, y + 31, 'bold 17px system-ui, sans-serif', '#14181F', 'center');
+    text(ctx, pn.title, x + 52, y + 24, 'bold 17px system-ui, sans-serif', '#FFFFFF', 'left');
+    text(ctx, pn.sub, x + 16, y + 64, '13px system-ui, sans-serif', '#C9C2B2', 'left');
+    if (i < 2) text(ctx, '➜', x + 282, y + 48, 'bold 22px system-ui, sans-serif', '#FFFFFF', 'center');
   });
   // HOW TO PLAY + enemy list, two columns.
-  text(ctx, 'HOW TO PLAY', 190, 296, 'bold 16px system-ui, sans-serif', COLOURS.gold, 'left');
+  text(ctx, 'HOW TO PLAY', 190, 306, 'bold 16px system-ui, sans-serif', COLOURS.gold, 'left');
   const how = [
     'WASD / arrows — move     ·     Mouse — aim     ·     Click / hold — fire lasers',
     'SHIFT / SPACE — dash (brief invulnerability)     ·     Q / R — rewind early',
@@ -472,18 +502,18 @@ function drawTitle(ctx, state, input) {
     'Guardians block shots from the FRONT — let an echo distract them, then backstab.',
     'Clear a loop to draft 1 of 3 upgrades. Beat THE CHRONARCH on Loop 10 to win.',
   ];
-  how.forEach((h, i) => text(ctx, h, 190, 320 + i * 22, '14px system-ui, sans-serif', '#EDEAE2', 'left'));
-  text(ctx, 'MEET THE ENEMY', 190, 448, 'bold 16px system-ui, sans-serif', COLOURS.gold, 'left');
+  how.forEach((h, i) => text(ctx, h, 190, 328 + i * 21, '14px system-ui, sans-serif', '#EDEAE2', 'left'));
+  text(ctx, 'MEET THE ENEMY', 190, 442, 'bold 16px system-ui, sans-serif', COLOURS.gold, 'left');
   const foes = ['guardian', 'sniper', 'bomber', 'chaser', 'splitter', 'warden', 'chronarch'];
   foes.forEach((t, i) => {
     const [icon, name] = ENEMY_LABELS[t];
     const x = 190 + (i % 4) * 235;
-    const y = 474 + Math.floor(i / 4) * 30;
+    const y = 468 + Math.floor(i / 4) * 30;
     text(ctx, icon + '  ' + name, x, y, 'bold 13px system-ui, sans-serif', '#FFFFFF', 'left');
   });
   // Difficulty buttons.
   DIFFICULTY_ORDER.forEach((d, i) => {
-    const x = 250 + i * 210, y = 566, w = 190, h = 44;
+    const x = 250 + i * 210, y = 560, w = 190, h = 44;
     const sel = state.difficulty === d;
     ctx.fillStyle = sel ? COLOURS.cyan : 'rgba(255,255,255,0.10)';
     rr(ctx, x, y, w, h, 8); ctx.fill();
@@ -495,11 +525,11 @@ function drawTitle(ctx, state, input) {
   });
   // START button.
   ctx.fillStyle = COLOURS.crimson;
-  rr(ctx, 470, 626, 340, 52, 10); ctx.fill();
+  rr(ctx, 470, 620, 340, 52, 10); ctx.fill();
   ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2;
-  rr(ctx, 470, 626, 340, 52, 10); ctx.stroke();
-  text(ctx, '▶  START SHIFT', 640, 653, 'bold 22px system-ui, sans-serif', '#FFFFFF', 'center');
-  input.clickRects.push({ kind: 'start', x: 470, y: 626, w: 340, h: 52 });
+  rr(ctx, 470, 620, 340, 52, 10); ctx.stroke();
+  text(ctx, '▶  START SHIFT', 640, 647, 'bold 22px system-ui, sans-serif', '#FFFFFF', 'center');
+  input.clickRects.push({ kind: 'start', x: 470, y: 620, w: 340, h: 52 });
   text(ctx, 'BEST  ' + state.best.toLocaleString('en-US'), 1090, 64, 'bold 15px system-ui, sans-serif', COLOURS.gold, 'right');
 }
 
@@ -541,7 +571,7 @@ function drawDraft(ctx, state, input) {
   }).join('  ·  ') : 'none yet';
   text(ctx, 'OWNED:  ' + owned, 640, 516, '15px system-ui, sans-serif', '#C9C2B2', 'center');
   const next = state.loop === 5 ? 'NEXT: LOOP 5 — THE WARDEN' : state.loop === 10 ? 'NEXT: LOOP 10 — THE CHRONARCH' : 'NEXT: LOOP ' + state.loop;
-  text(ctx, next + '   ·   ECHOES ' + state.echoes.length + '/' + state.upgradeValues.maxEchoes, 640, 548, 'bold 16px system-ui, sans-serif', COLOURS.cyan, 'center');
+  text(ctx, next + '   ·   ECHOES ' + state.echoes.length + '/' + echoSlots(state), 640, 548, 'bold 16px system-ui, sans-serif', COLOURS.cyan, 'center');
 }
 
 // ---- Summary ----
@@ -570,11 +600,12 @@ function drawSummary(ctx, state, input) {
     ['KILLS', String(state.kills)],
     ['ACCURACY', acc + '%'],
     ['CROSSFIRES', String(state.crossfires)],
+    ['SURGES', String(state.surges || 0)],
     ['SHIELD BREAKS', String(state.shieldBreaks)],
     ['REWINDS', String(state.rewinds)],
   ];
   stats.forEach((s, i) => {
-    const x = 320 + i * 125;
+    const x = 316 + i * 108;
     text(ctx, s[0], x, 396, 'bold 12px system-ui, sans-serif', '#C9C2B2', 'center');
     text(ctx, s[1], x, 422, 'bold 20px system-ui, sans-serif', '#FFFFFF', 'center');
   });

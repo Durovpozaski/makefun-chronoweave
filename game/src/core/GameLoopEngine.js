@@ -5,13 +5,20 @@
 // clear, or EARLY when the player presses Q / R — the rewind is an active verb.
 // The previous 10 seconds become a cyan Time Echo that replays the exact
 // recorded inputs; you respawn as a new timeline instance.
-import { ARENA, DT, MAX_LOOPS, PLAYER, SCORING, DIFFICULTIES, DIFFICULTY_ORDER, mulberry32, clamp, dist, circleRectResolve } from '../config.js';
+import { ARENA, DT, MAX_LOOPS, PLAYER, SCORING, WEAVE_MAX, MAX_ECHO_SLOTS, FRAY_CAP, DIFFICULTIES, DIFFICULTY_ORDER, mulberry32, clamp, dist, circleRectResolve } from '../config.js';
 import { createRecorder, recordFrame, createEcho, echoFrame } from '../systems/TimelineRecorderSystem.js';
 import { fireBolt, updateBolts, updateShockwaves, updateRifts, addFloat, spawnSparks, comboMult } from '../systems/BallisticsAndShieldSystem.js';
 import { layoutPillars, spawnWave, updateEnemies, waveCleared } from '../systems/ArenaDirector.js';
 import { rollOffers, applyUpgrade, upgradeValues } from '../systems/ParadoxUpgradeSystem.js';
 
 export const SPAWN = { x: 640, y: 600 };
+
+// Effective echo capacity: base 2 (3 with TRIPLE ECHO) + PARADOX SURGE
+// bonuses, hard cap 4. The HUD, the rewind cap, and the draft screen all
+// read this one function so the slots shown are always the slots real.
+export function echoSlots(state) {
+  return Math.min(MAX_ECHO_SLOTS, state.upgradeValues.maxEchoes + (state.echoBonus || 0));
+}
 
 // The bot driver is registered once by main.js and kept at module level:
 // startRun() replaces the whole state object, so a driver stored ON the state
@@ -26,6 +33,10 @@ export function newRun(difficulty, seed) {
     rng: mulberry32(seed || 1),
     time: 0, loop: 1, loopTimeLeft: diff.loop, loopElapsed: 0,
     score: 0, best: 0, combo: 0, comboT: 0, crossfires: 0, kills: 0,
+    // WEAVE / SURGE / FRAY — the hook's state. Weave 0..100 charges on
+    // crossfires; a rewind at 100 spends it for +1 echo slot (surge).
+    // Fray counts timeout rewinds (cap 3); each fray adds a Chaser next loop.
+    weave: 0, surges: 0, echoBonus: 0, surgePending: false, fray: 0,
     shotsFired: 0, shotsHit: 0, shieldBreaks: 0, shieldBlocks: 0, rewinds: 0,
     player: {
       x: SPAWN.x, y: SPAWN.y, angle: -Math.PI / 2, radius: PLAYER.radius,
@@ -117,6 +128,19 @@ function startRewind(state, kind) {
   state.rewindKind = kind;
   state.rewindT = 1.25;
   state.rewinds++;
+  // PARADOX SURGE: a rewind spent at full Weave burns the meter for +1 echo
+  // slot on the upcoming loop (bonus caps at +2, so slots cap at 4 total).
+  if (state.weave >= WEAVE_MAX) {
+    state.weave = 0;
+    state.surges++;
+    state.echoBonus = Math.min(2, (state.echoBonus || 0) + 1);
+    state.surgePending = true;
+    state.events.push({ type: 'surge', x: 640, y: 360 });
+  }
+  // FRAYED rewind: only the TIMEOUT rewind frays the timeline. A manual
+  // (Q/R) or clear rewind is clean. Each fray adds one extra Chaser to the
+  // next loop's wave (cap 3) — the price of letting the clock run out.
+  if (kind === 'timeout') state.fray = Math.min(FRAY_CAP, (state.fray || 0) + 1);
   state.slowmoT = 0.5;
   state.flash = 1;
   state.events.push({ type: 'rewind', x: 640, y: 360 });
@@ -127,7 +151,7 @@ function finishRewind(state) {
   const frames = state.recorder.frames.slice();
   if (frames.length >= 30) {
     state.echoes.push(createEcho(frames, SPAWN.x, SPAWN.y));
-    while (state.echoes.length > state.upgradeValues.maxEchoes) {
+    while (state.echoes.length > echoSlots(state)) {
       const old = state.echoes.shift();
       spawnSparks(state, old.x, old.y, 16, '#00E5FF');
     }
@@ -159,6 +183,12 @@ function finishRewind(state) {
     state.screen = 'play';
     const name = state.loop === 5 ? ' — THE WARDEN' : state.loop === 10 ? ' — THE CHRONARCH' : '';
     state.banner = { txt: 'LOOP ' + state.loop + name, sub: cleared ? '' : 'The unfinished fight continues', ttl: 2.4 };
+  }
+  // A surge overrides the loop banner: the player must SEE the payoff.
+  if (state.surgePending) {
+    state.surgePending = false;
+    state.banner = { txt: 'PARADOX SURGE! +1 ECHO SLOT', sub: 'Weave spent — ' + echoSlots(state) + ' echo slots this loop', ttl: 2.8 };
+    addFloat(state, 640, 300, '+1 ECHO SLOT', '#F5B81D');
   }
 }
 
@@ -252,6 +282,7 @@ function drainEvents(state, audio) {
       case 'shieldBlock': state.shieldBlocks++; audio.sfx('block'); break;
       case 'shieldBreak': state.shieldBreaks++; state.slowmoT = Math.max(state.slowmoT, 0.18); state.hitstopT = Math.max(state.hitstopT, 0.045); audio.sfx('shieldBreak'); break;
       case 'crossfire': audio.sfx('crossfire'); break;
+      case 'surge': audio.sfx('upgrade'); break;
       case 'kill': state.slowmoT = Math.max(state.slowmoT, 0.12); audio.sfx('kill'); break;
       case 'dash': audio.sfx('dash'); break;
       case 'detonate': audio.sfx('explode'); break;

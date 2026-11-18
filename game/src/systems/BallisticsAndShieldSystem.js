@@ -4,7 +4,7 @@
 // front spark off it for 0 damage. The counter-play is an echo drawing its
 // attention from the front while the live player backstabs it — a backstab
 // triggers SHIELD BREAK (stagger + 1.5x damage).
-import { ARENA, PLAYER, angleDiff, clamp, dist, segmentHitsRect } from '../config.js';
+import { ARENA, PLAYER, WEAVE_PER_CROSSFIRE, WEAVE_MAX, angleDiff, clamp, dist, segmentHitsRect } from '../config.js';
 
 export function fireBolt(state, shooter, angle, opts) {
   const o = opts || {};
@@ -73,6 +73,9 @@ export function damageEnemy(state, enemy, dmg, from, hitX, hitY, fromEchoIdx) {
     dmg *= state.upgradeValues.crossfireMult;
     state.combo += 2; state.comboT = 2;
     state.crossfires++;
+    // WEAVE: every crossfire charges the meter — 3 crossfires fill it, and
+    // a rewind spent at full Weave becomes a PARADOX SURGE (+1 echo slot).
+    state.weave = Math.min(WEAVE_MAX, (state.weave || 0) + WEAVE_PER_CROSSFIRE);
     state.events.push({ type: 'crossfire', x: enemy.x, y: enemy.y });
     addFloat(state, enemy.x, enemy.y - 48, 'CROSSFIRE x' + state.upgradeValues.crossfireMult, '#00E5FF');
   }

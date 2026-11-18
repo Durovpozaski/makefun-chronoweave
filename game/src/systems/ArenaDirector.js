@@ -76,6 +76,9 @@ export function spawnWave(state, keep) {
     list.push(c); state.boss = c;
     add('sniper', 2, false); add('chaser', 2, false);
   }
+  // FRAY: a frayed timeline spawns extra Chasers — one per fray (cap 3).
+  // The timeout rewind's price, paid at the start of the next loop.
+  if (state.fray > 0) add('chaser', Math.min(3, state.fray), false);
   if (keep) {
     // Timeout / manual rewind: the unfinished fight continues — leftovers stay,
     // capped at 12 live enemies so the arena never floods.

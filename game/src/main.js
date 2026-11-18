@@ -108,8 +108,10 @@ function computeBotInput(state) {
   if (m > 1) { mx /= m; my /= m; }
   out.mx = clamp(mx, -1, 1); out.my = clamp(my, -1, 1);
   if (d < 580 && lineClear(state, p.x, p.y, target.x, target.y)) out.fire = true;
-  // Bank the echo early when the loop is almost over and echoes are short.
-  if (state.loopTimeLeft < 3.5 && state.loopElapsed >= 2 && state.echoes.length < state.upgradeValues.maxEchoes) out.rewind = true;
+  // Bank the echo early when the loop is almost over: a manual rewind is
+  // CLEAN, while letting the clock run out frays the timeline (+Chasers).
+  // Rewinding with a full bench just retires the oldest echo — still worth it.
+  if (state.loopTimeLeft < 3.5 && state.loopElapsed >= 2) out.rewind = true;
   return out;
 }
 setBotDriver(computeBotInput);
@@ -161,7 +163,7 @@ window.__chronoweave = {
     state.score = 15840;
     state.best = 15840;
     state.perLoop = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((l) => ({ loop: l, kills: 4 + (l % 3), score: 900 + l * 160, time: 9.4 }));
-    state.kills = 52; state.crossfires = 14; state.shieldBreaks = 11; state.rewinds = 9;
+    state.kills = 52; state.crossfires = 14; state.shieldBreaks = 11; state.rewinds = 9; state.surges = 3;
     state.shotsFired = 640; state.shotsHit = 410;
     state.win = true; state.winGrade = 'S'; state.newBest = true;
     state.screen = 'summary';
