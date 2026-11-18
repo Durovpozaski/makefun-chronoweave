@@ -11,6 +11,7 @@ import { fireBolt, updateBolts, updateShockwaves, updateRifts, addFloat, spawnSp
 import { layoutPillars, spawnWave, updateEnemies, waveCleared } from '../systems/ArenaDirector.js';
 import { rollOffers, applyUpgrade, upgradeValues } from '../systems/ParadoxUpgradeSystem.js';
 import { grantRelic, checkRelics, hasRelic, relicEchoDamageMult } from '../systems/ParadoxRelicSystem.js';
+import { loadWorkshop, awardShards, buyWorkshop, workshopDashMult, workshopScoreMult, workshopMaxHpBonus } from '../systems/ChronoWorkshop.js';
 
 export const SPAWN = { x: 640, y: 600 };
 
@@ -29,6 +30,10 @@ export function setBotDriver(fn) { botDriver = fn; }
 
 export function newRun(difficulty, seed) {
   const diff = DIFFICULTIES[difficulty] || DIFFICULTIES.steady;
+  // PASS 8 — the Chrono Workshop is permanent: the profile loads from
+  // localStorage at the start of every run, so bought levels apply from
+  // loop 1 of the very next run.
+  const ws = loadWorkshop();
   const st = {
     screen: 'title', difficulty, diff, seed,
     rng: mulberry32(seed || 1),
@@ -41,7 +46,7 @@ export function newRun(difficulty, seed) {
     shotsFired: 0, shotsHit: 0, shieldBreaks: 0, shieldBlocks: 0, rewinds: 0,
     player: {
       x: SPAWN.x, y: SPAWN.y, angle: -Math.PI / 2, radius: PLAYER.radius,
-      hp: PLAYER.hp, maxHp: PLAYER.hp, fireCd: 0, dashCd: 0, dashT: 0,
+      hp: PLAYER.hp + (ws.levels.hull || 0) * 10, maxHp: PLAYER.hp + (ws.levels.hull || 0) * 10, fireCd: 0, dashCd: 0, dashT: 0,
       dashDirX: 0, dashDirY: -1, invulnT: 0, alive: true, inRift: false, trail: [],
     },
     echoes: [],
@@ -50,6 +55,8 @@ export function newRun(difficulty, seed) {
     // PASS 7 — Paradox Relics: feats earned mid-run (see ParadoxRelicSystem).
     // relicHpBonus survives Vital Loop re-derives of maxHp.
     relics: [], relicHpBonus: 0,
+    // PASS 8 — Chrono Workshop profile for this run + shards it earns.
+    workshop: ws, workshopHpBonus: (ws.levels.hull || 0) * 10, shardsEarned: 0,
     upgradeValues: upgradeValues({}),
     pendingOffers: [], draftKind: 'clear', recording: [], recorder: createRecorder(),
     rewindT: 0, rewindKind: 'timeout', deathT: 0,
@@ -124,7 +131,7 @@ function applyMove(state, ent, inp, dt) {
   for (const pil of state.pillars) circleRectResolve(p, pil);
   p.angle = inp.aim;
   if (inp.dash && p.dashCd <= 0 && p.dashT <= 0) {
-    const cd = state.upgradeValues.phaseDash ? 0.7 : PLAYER.dashCooldown;
+    const cd = (state.upgradeValues.phaseDash ? 0.7 : PLAYER.dashCooldown) * workshopDashMult(state);
     p.dashCd = cd;
     p.dashT = PLAYER.dashTime;
     p.invulnT = Math.max(p.invulnT, state.upgradeValues.phaseDash ? 0.4 : 0.24);
@@ -173,6 +180,11 @@ function startRewind(state, kind) {
     state.echoBonus = Math.min(2, (state.echoBonus || 0) + 1);
     state.surgePending = true;
     state.events.push({ type: 'surge', x: 640, y: 360 });
+    // PASS 8 — SURGE CONDUIT: a surge also stitches the player back together.
+    if (hasRelic(state, 'conduit')) {
+      state.player.hp = Math.min(state.player.maxHp, state.player.hp + 15);
+      addFloat(state, state.player.x, state.player.y - 28, '+15 HP', '#00E5FF');
+    }
   }
   // FRAYED rewind: only the TIMEOUT rewind frays the timeline. A manual
   // (Q/R) or clear rewind is clean. Each fray adds one extra Chaser to the
@@ -197,11 +209,14 @@ function finishRewind(state) {
   state.perLoop.push({ loop: state.loop, kills: state.loopKills, score: state.loopScore, time: Math.round(state.loopElapsed * 10) / 10 });
   const cleared = state.rewindKind === 'clear';
   if (cleared) {
-    const gain = Math.round(SCORING.loopClearBonus * state.diff.scoreMul);
+    const gain = Math.round(SCORING.loopClearBonus * state.diff.scoreMul * workshopScoreMult(state));
     state.score += gain;
     state.loopScore += gain;
     addFloat(state, 640, 200, 'LOOP CLEAR  +' + gain, '#F5B81D');
   }
+  // PASS 8 — LOOPKEEPER'S SEAL: surviving Loop 8 counts, however the loop
+  // ends (clear, manual rewind or timeout) — the seal holds the line.
+  if (state.loop === 8) grantRelic(state, 'loopkeeper');
   state.loop++;
   state.loopElapsed = 0;
   state.loopTimeLeft = state.diff.loop;
@@ -253,7 +268,7 @@ function toSummary(state, win, reason) {
   // summary screen, so the displayed run time must be frozen here.
   state.runTime = state.time;
   if (win) {
-    const gain = Math.round(state.loopTimeLeft * SCORING.winBonusPerSecond);
+    const gain = Math.round(state.loopTimeLeft * SCORING.winBonusPerSecond * workshopScoreMult(state));
     state.score += gain;
     state.winGrade = state.score >= SCORING.gradeSMin ? 'S' : state.score >= SCORING.gradeAMin ? 'A' : 'B';
     state.newBest = state.score > state.best;
@@ -272,6 +287,14 @@ function toSummary(state, win, reason) {
     }
     state.events.push({ type: 'lose' });
   }
+  // PASS 8 — one last relic check: the win bonus above can push the score
+  // over a threshold (e.g. the Ledger's 12,000) after the last kill, and no
+  // check runs after this point. checkRelics is idempotent, so re-running it
+  // here can only grant what the final score actually earned.
+  checkRelics(state);
+  // PASS 8 — the run pays out in Chrono Shards, banked once, here: the
+  // single place a run ends, so a run can never pay twice.
+  state.shardsEarned = awardShards(state);
   // PASS 6: per-difficulty best — the title screen shows BEST under each
   // difficulty. A losing run can still set its difficulty's best.
   if (state.score > (state.difficultyBest[state.difficulty] || 0)) {
@@ -434,6 +457,10 @@ export function step(state, input, audio, dt) {
         drainEvents(state, audio);
         return;
       }
+      if (r.kind === 'workshop' && input.consumeClick(r)) {
+        state.screen = 'workshop';
+        if (audio) audio.sfx('click');
+      }
     }
     // Attract-mode battle runs behind the title.
     const demoInp = botDriver ? botDriver(state) : { mx: 0, my: 0, aim: -Math.PI / 2, fire: false, dash: false, stasis: false, rewind: false };
@@ -519,6 +546,24 @@ export function step(state, input, audio, dt) {
         state.banner = { txt: 'LOOP ' + state.loop, sub: '', ttl: 1.6 };
       }
     }
+    updateFx(state, dt);
+    drainEvents(state, audio);
+    input.clearEdges();
+    return;
+  }
+
+  if (state.screen === 'workshop') {
+    for (const r of input.clickRects) {
+      if (r.kind === 'buy' && input.consumeClick(r)) {
+        if (buyWorkshop(state, r.id)) { if (audio) audio.sfx('upgrade'); }
+        else if (audio) audio.sfx('click');
+      }
+      if (r.kind === 'back' && input.consumeClick(r)) {
+        state.screen = 'title';
+        if (audio) audio.sfx('click');
+      }
+    }
+    if (input.titlePressed) { input.titlePressed = false; state.screen = 'title'; }
     updateFx(state, dt);
     drainEvents(state, audio);
     input.clearEdges();

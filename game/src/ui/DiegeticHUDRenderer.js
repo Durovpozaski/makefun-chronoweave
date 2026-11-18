@@ -8,6 +8,7 @@ import { W, H, ARENA, COLOURS, MAX_LOOPS, DIFFICULTY_ORDER, DIFFICULTIES, clamp 
 import { echoSlots } from '../core/GameLoopEngine.js';
 import { UPGRADES } from '../systems/ParadoxUpgradeSystem.js';
 import { RELICS } from '../systems/ParadoxRelicSystem.js';
+import { WORKSHOP_ITEMS, workshopTotalLevels, workshopMaxLevels } from '../systems/ChronoWorkshop.js';
 
 function rr(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -135,6 +136,7 @@ export function render(ctx, state, input) {
   if (state.screen === 'play' || state.screen === 'rewind') drawPlayHUD(ctx, state, input);
   else if (state.screen === 'title') drawTitle(ctx, state, input);
   else if (state.screen === 'draft') drawDraft(ctx, state, input);
+  else if (state.screen === 'workshop') drawWorkshop(ctx, state, input);
   else if (state.screen === 'summary') drawSummary(ctx, state, input);
   if (state.screen === 'rewind') drawRewindFX(ctx, state);
   // The banner lives on the playfield only: on draft/summary it would sit
@@ -572,6 +574,9 @@ function drawPlayHUD(ctx, state, input) {
   // only: in cover mode the dedicated RELICS panel shows them, and the
   // OWNED UPGRADES panel would paint over this chip.
   if (!state.coverMode) text(ctx, 'RELICS  ' + (state.relics || []).length + '/' + RELICS.length, 1256, 254, 'bold 14px system-ui, sans-serif', '#14181F', 'right');
+  // PASS 8 — WORKSHOP chip: permanent levels owned, live play only (in
+  // cover mode the OWNED UPGRADES panel carries this line instead).
+  if (!state.coverMode) text(ctx, 'WORKSHOP  ' + workshopTotalLevels(state.workshop) + '/' + workshopMaxLevels(state.workshop), 1256, 278, 'bold 14px system-ui, sans-serif', '#14181F', 'right');
   // PASS 6 — cover-only density panels. Both read live state, so the lists
   // always match the staged wave and the owned upgrades exactly: the enemy
   // list counts state.enemies by type, the owned list names
@@ -594,13 +599,16 @@ function drawPlayHUD(ctx, state, input) {
       return u ? u.icon + '  ' + u.name : id.toUpperCase();
     });
     const shown = ownedNames.slice(0, 3);
+    const moreH = ownedNames.length > 3 ? 18 : 0;
     ctx.fillStyle = 'rgba(22,28,37,0.78)';
-    rr(ctx, 1016, 244, 240, 26 + shown.length * 20 + (ownedNames.length > 3 ? 18 : 0), 8); ctx.fill();
+    rr(ctx, 1016, 244, 240, 26 + shown.length * 20 + moreH + 20, 8); ctx.fill();
     text(ctx, 'OWNED UPGRADES', 1242, 258, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'right');
     shown.forEach((n, i) => {
       text(ctx, n, 1242, 280 + i * 20, 'bold 13px system-ui, sans-serif', '#FFFFFF', 'right');
     });
     if (ownedNames.length > 3) text(ctx, '… +' + (ownedNames.length - 3) + ' more', 1242, 280 + shown.length * 20, '12px system-ui, sans-serif', '#C9C2B2', 'right');
+    // PASS 8 — the workshop the run is playing with, permanent levels owned.
+    text(ctx, '⚙ WORKSHOP  ' + workshopTotalLevels(state.workshop) + '/' + workshopMaxLevels(state.workshop), 1242, 280 + shown.length * 20 + moreH, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'right');
     // PASS 7 — cover-only RELICS panel: the feats this run has earned.
     // It sits under the FOES panel, same dark card, same left edge.
     const relicRows = (state.relics || []).map((id) => {
@@ -694,7 +702,7 @@ function drawTitle(ctx, state, input) {
   text(ctx, 'YOUR PAST SELF FIGHTS BESIDE YOU.', 640, 134, 'bold 27px system-ui, sans-serif', COLOURS.gold, 'center');
   text(ctx, 'Rewind to multiply. Crossfire to charge the Weave.', 640, 160, 'italic 17px system-ui, sans-serif', '#7DF3FF', 'center');
   // PASS 6 — counts line: the run's scale in one glance.
-  text(ctx, '10 LOOPS  ·  2 BOSSES  ·  8 UPGRADES  ·  6 RELICS  ·  5 FOES  ·  ECHOES  ·  REWIND', 640, 178, 'bold 15px system-ui, sans-serif', COLOURS.gold, 'center');
+  text(ctx, '10 LOOPS  ·  2 BOSSES  ·  8 UPGRADES  ·  12 RELICS  ·  5 FOES  ·  ECHOES  ·  REWIND', 640, 178, 'bold 15px system-ui, sans-serif', COLOURS.gold, 'center');
   // 3-panel diagram: FIGHT → REWIND → ECHO REPLAYS.
   const panels = [
     { n: '1', title: 'FIGHT 10s', sub: 'WASD move · mouse aim · click shoot', col: COLOURS.crimson },
@@ -760,6 +768,16 @@ function drawTitle(ctx, state, input) {
   rr(ctx, 470, 620, 340, 52, 10); ctx.stroke();
   text(ctx, '▶  START SHIFT', 640, 647, 'bold 22px system-ui, sans-serif', '#FFFFFF', 'center');
   input.clickRects.push({ kind: 'start', x: 470, y: 620, w: 340, h: 52 });
+  // PASS 8 — WORKSHOP button + the permanent profile at a glance, top-left.
+  ctx.fillStyle = 'rgba(245,184,29,0.92)';
+  rr(ctx, 190, 620, 260, 52, 10); ctx.fill();
+  ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2;
+  rr(ctx, 190, 620, 260, 52, 10); ctx.stroke();
+  text(ctx, '⚙  WORKSHOP', 320, 647, 'bold 20px system-ui, sans-serif', '#14181F', 'center');
+  input.clickRects.push({ kind: 'workshop', x: 190, y: 620, w: 260, h: 52 });
+  const wsT = state.workshop || { shards: 0, levels: {} };
+  text(ctx, '◆  ' + (wsT.shards || 0) + ' CHRONO SHARDS', 190, 64, 'bold 15px system-ui, sans-serif', COLOURS.gold, 'left');
+  text(ctx, 'WORKSHOP  ' + workshopTotalLevels(wsT) + '/' + workshopMaxLevels(wsT) + ' LEVELS', 190, 88, 'bold 13px system-ui, sans-serif', '#C9C2B2', 'left');
   text(ctx, 'BEST  ' + state.best.toLocaleString('en-US'), 1090, 64, 'bold 15px system-ui, sans-serif', COLOURS.gold, 'right');
   // LAST RUNS (Pass 4): the last 3 runs, newest first. Empty state shows
   // nothing — no placeholder.
@@ -819,12 +837,15 @@ function drawDraft(ctx, state, input) {
     const u = UPGRADES.find((o) => o.id === id);
     return u ? u.name : id.toUpperCase();
   }).join('  ·  ') : 'none yet';
-  text(ctx, 'OWNED:  ' + owned, 640, 510, '15px system-ui, sans-serif', '#C9C2B2', 'center');
-  // PASS 7 — the relics this run has earned, with their effects visible.
-  const relicLine = (state.relics || []).length
-    ? (state.relics || []).map((id) => { const r = RELICS.find((o) => o.id === id); return r ? r.icon + ' ' + r.name : id.toUpperCase(); }).join('  ·  ')
-    : 'none earned yet';
-  text(ctx, 'RELICS ' + (state.relics || []).length + '/6:  ' + relicLine, 640, 534, 'bold 14px system-ui, sans-serif', COLOURS.gold, 'center');
+  text(ctx, 'OWNED:  ' + owned, 640, 506, '15px system-ui, sans-serif', '#C9C2B2', 'center');
+  // PASS 7/8 — the relics this run has earned, with their effects visible.
+  // Twelve names never fit one line: two rows of six, header on its own.
+  const relicNames = (state.relics || []).map((id) => { const r = RELICS.find((o) => o.id === id); return r ? r.icon + ' ' + r.name : id.toUpperCase(); });
+  const relicRows = [];
+  for (let i = 0; i < relicNames.length; i += 6) relicRows.push(relicNames.slice(i, i + 6).join('  ·  '));
+  text(ctx, 'PARADOX RELICS  ' + (state.relics || []).length + '/' + RELICS.length, 640, 528, 'bold 14px system-ui, sans-serif', COLOURS.gold, 'center');
+  if (relicRows.length) relicRows.forEach((row, i) => text(ctx, row, 640, 548 + i * 18, '13px system-ui, sans-serif', '#F5B81D', 'center'));
+  else text(ctx, 'none earned yet', 640, 548, '13px system-ui, sans-serif', '#C9C2B2', 'center');
   // NEXT-LOOP PREVIEW (Pass 2): finishRewind already spawned the next wave
   // before showing the draft, so counting state.enemies IS the exact
   // composition the player is about to face — no separate estimate to drift.
@@ -841,13 +862,59 @@ function drawDraft(ctx, state, input) {
     first = false;
   }
   if (first) prev += '— arena clear —';
-  text(ctx, prev, 640, 558, 'bold 16px system-ui, sans-serif', COLOURS.cyan, 'center');
-  text(ctx, 'ECHOES ' + state.echoes.length + '/' + echoSlots(state), 640, 582, 'bold 14px system-ui, sans-serif', '#C9C2B2', 'center');
+  text(ctx, prev, 640, 588, 'bold 16px system-ui, sans-serif', COLOURS.cyan, 'center');
+  text(ctx, 'ECHOES ' + state.echoes.length + '/' + echoSlots(state), 640, 610, 'bold 14px system-ui, sans-serif', '#C9C2B2', 'center');
   // PASS 6 — loop-map strip: the 10-loop road at a glance (display only —
   // no road choice, no new system). Boss loops 5 and 10 are gold-outlined,
   // cleared loops gold, the loop you are about to play cyan.
-  text(ctx, 'LOOP MAP — YOU ARE HEADING INTO LOOP ' + state.loop, 640, 606, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'center');
-  drawLoopTrack(ctx, 640, 626, 30, 12, clamp(state.loop - 1, 0, 10), state.loop, false, true);
+  text(ctx, 'LOOP MAP — YOU ARE HEADING INTO LOOP ' + state.loop, 640, 630, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'center');
+  drawLoopTrack(ctx, 640, 648, 30, 12, clamp(state.loop - 1, 0, 10), state.loop, false, true);
+}
+
+
+// ---- Workshop ----
+function drawWorkshop(ctx, state, input) {
+  ctx.fillStyle = 'rgba(20,24,31,0.62)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(22,28,37,0.94)';
+  rr(ctx, 150, 36, 980, 648, 18); ctx.fill();
+  ctx.strokeStyle = COLOURS.gold; ctx.lineWidth = 2;
+  rr(ctx, 150, 36, 980, 648, 18); ctx.stroke();
+  const ws = state.workshop || { shards: 0, levels: {} };
+  text(ctx, 'CHRONO WORKSHOP', 640, 96, 'bold 46px system-ui, sans-serif', '#FFFFFF', 'center');
+  text(ctx, 'Permanent upgrades — bought once, kept forever. Shards are earned every run: score ÷ 1000 + kills ÷ 10.', 640, 132, '16px system-ui, sans-serif', '#7DF3FF', 'center');
+  text(ctx, '◆  ' + (ws.shards || 0) + ' CHRONO SHARDS', 640, 160, 'bold 20px system-ui, sans-serif', COLOURS.gold, 'center');
+  WORKSHOP_ITEMS.forEach((it, i) => {
+    const x = 190 + (i % 3) * 310, y = 186 + Math.floor(i / 3) * 196, w = 280, h = 176;
+    const lvl = (ws.levels && ws.levels[it.id]) || 0;
+    const maxed = lvl >= it.max;
+    const cost = maxed ? null : it.costs[lvl];
+    const afford = !maxed && (ws.shards || 0) >= cost;
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    rr(ctx, x, y, w, h, 10); ctx.fill();
+    ctx.strokeStyle = afford ? COLOURS.gold : 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
+    rr(ctx, x, y, w, h, 10); ctx.stroke();
+    text(ctx, it.icon + '  ' + it.name, x + w / 2, y + 28, 'bold 16px system-ui, sans-serif', '#FFFFFF', 'center');
+    const words = it.desc.split(' ');
+    let line = '', ly = y + 58;
+    for (const wd of words) {
+      if ((line + ' ' + wd).trim().length > 30) { text(ctx, line.trim(), x + w / 2, ly, '13px system-ui, sans-serif', '#C9C2B2', 'center'); ly += 18; line = wd; }
+      else line += ' ' + wd;
+    }
+    if (line.trim()) text(ctx, line.trim(), x + w / 2, ly, '13px system-ui, sans-serif', '#C9C2B2', 'center');
+    for (let p = 0; p < it.max; p++) {
+      ctx.fillStyle = p < lvl ? COLOURS.gold : '#C9C2B2';
+      ctx.beginPath(); ctx.arc(x + w / 2 - (it.max - 1) * 9 + p * 18, y + 118, 6, 0, Math.PI * 2); ctx.fill();
+    }
+    text(ctx, maxed ? '★ MAXED ★' : 'NEXT: ' + cost + ' SHARDS — CLICK TO BUY', x + w / 2, y + 146, 'bold 14px system-ui, sans-serif', maxed ? COLOURS.gold : afford ? '#FFFFFF' : '#7A7F88', 'center');
+    input.clickRects.push({ kind: 'buy', id: it.id, x, y, w, h });
+  });
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  rr(ctx, 470, 620, 340, 52, 10); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2;
+  rr(ctx, 470, 620, 340, 52, 10); ctx.stroke();
+  text(ctx, '◀  BACK TO TITLE  (T)', 640, 647, 'bold 20px system-ui, sans-serif', '#FFFFFF', 'center');
+  input.clickRects.push({ kind: 'back', x: 470, y: 620, w: 340, h: 52 });
 }
 
 // ---- Summary ----
@@ -863,8 +930,8 @@ function drawSummary(ctx, state, input) {
   // layout (already verified and viewed) — only the buttons move, and the
   // old PLAY AGAIN click point (640,626) still lands inside the button.
   const L = state.win
-    ? { cy: 150, banner: 238, score: 304, best: 334, statL: 366, statV: 392, track: 502, graphL: 528, graphTop: 574, graphH: 34, graphLab: 586 }
-    : { cy: 160, banner: 252, score: 322, best: 356, statL: 392, statV: 418, track: 458, graphL: 490, graphTop: 566, graphH: 64, graphLab: 580 };
+    ? { cy: 150, banner: 238, score: 304, best: 334, statL: 366, statV: 392, track: 512, graphL: 534, graphTop: 576, graphH: 16, graphLab: 598 }
+    : { cy: 160, banner: 252, score: 322, best: 356, statL: 388, statV: 412, track: 486, graphL: 512, graphTop: 584, graphH: 36, graphLab: 598 };
   // Grade circle.
   const g = state.win ? (state.winGrade || 'B') : '—';
   ctx.fillStyle = state.win ? COLOURS.gold : '#3A4454';
@@ -899,10 +966,10 @@ function drawSummary(ctx, state, input) {
   // ACHIEVEMENTS (Pass 4, win only): 6 items from the run's own stats —
   // earned gold, unearned grey — in two rows of three.
   if (state.win) {
-    text(ctx, 'ACHIEVEMENTS', 640, 412, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'center');
+    text(ctx, 'ACHIEVEMENTS', 640, 408, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'center');
     achievementsFor(state).forEach((a, i) => {
       const x = 370 + (i % 3) * 270;
-      const y = 432 + Math.floor(i / 3) * 20;
+      const y = 424 + Math.floor(i / 3) * 18;
       text(ctx, (a.earned ? '★ ' : '☆ ') + a.name + ' — ' + a.desc, x, y, '13px system-ui, sans-serif', a.earned ? '#F5B81D' : '#7A7F88', 'center');
     });
   }
@@ -912,10 +979,14 @@ function drawSummary(ctx, state, input) {
     const r = RELICS.find((o) => o.id === id);
     return r ? r.icon + ' ' + r.name : id.toUpperCase();
   });
-  const relY = state.win ? 464 : 428;
-  text(ctx, 'PARADOX RELICS  ' + sumRelics.length + '/6', 640, relY, 'bold 13px system-ui, sans-serif', sumRelics.length ? COLOURS.gold : '#7A7F88', 'center');
-  text(ctx, sumRelics.length ? sumRelics.join('  ·  ') : 'none earned yet',
-    640, relY + 18, '11px system-ui, sans-serif', sumRelics.length ? '#F5B81D' : '#7A7F88', 'center');
+  // PASS 8 — twelve names take two rows of six; the header also banks the
+  // run's shard payout, so the win screen proves the workshop economy.
+  const sumRows = [];
+  for (let i = 0; i < sumRelics.length; i += 6) sumRows.push(sumRelics.slice(i, i + 6).join('  ·  '));
+  const relY = state.win ? 464 : 436;
+  text(ctx, 'PARADOX RELICS  ' + sumRelics.length + '/' + RELICS.length + '   ·   +' + (state.shardsEarned || 0) + ' SHARDS  ·  BALANCE ' + (state.workshop ? (state.workshop.shards || 0) : 0), 640, relY, 'bold 13px system-ui, sans-serif', sumRelics.length ? COLOURS.gold : '#7A7F88', 'center');
+  if (sumRows.length) sumRows.forEach((row, i) => text(ctx, row, 640, relY + 18 + i * 16, '11px system-ui, sans-serif', '#F5B81D', 'center'));
+  else text(ctx, 'none earned yet', 640, relY + 18, '11px system-ui, sans-serif', '#7A7F88', 'center');
   // LOOP-PROGRESS TRACK (Pass 3): win — all 10 filled gold; lose — filled
   // up to the loop reached, the killing loop crimson, the rest unreached.
   drawLoopTrack(ctx, 640, L.track, 44, 12, state.win ? 10 : clamp(state.loop - 1, 0, 10),

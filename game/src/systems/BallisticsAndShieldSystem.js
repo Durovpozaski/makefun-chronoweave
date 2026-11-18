@@ -5,7 +5,8 @@
 // attention from the front while the live player backstabs it — a backstab
 // triggers SHIELD BREAK (stagger + 1.5x damage).
 import { ARENA, PLAYER, WEAVE_PER_CROSSFIRE, WEAVE_MAX, angleDiff, clamp, dist, segmentHitsRect } from '../config.js';
-import { relicShieldBreakBonus, relicWeaveMult, relicAllDamageMult } from './ParadoxRelicSystem.js';
+import { relicShieldBreakBonus, relicWeaveMult, relicAllDamageMult, relicCrossfireMult, relicBossDamageMult } from './ParadoxRelicSystem.js';
+import { workshopDamageMult, workshopWeaveMult, workshopScoreMult, workshopTakenMult } from './ChronoWorkshop.js';
 
 export function fireBolt(state, shooter, angle, opts) {
   const o = opts || {};
@@ -73,17 +74,19 @@ export function damageEnemy(state, enemy, dmg, from, hitX, hitY, fromEchoIdx) {
     }
   }
   if (cross) {
-    dmg *= state.upgradeValues.crossfireMult;
+    dmg *= state.upgradeValues.crossfireMult * relicCrossfireMult(state);
     state.combo += 2; state.comboT = 2;
     state.crossfires++;
     // WEAVE: every crossfire charges the meter — 3 crossfires fill it, and
     // a rewind spent at full Weave becomes a PARADOX SURGE (+1 echo slot).
-    state.weave = Math.min(WEAVE_MAX, (state.weave || 0) + WEAVE_PER_CROSSFIRE * relicWeaveMult(state));
+    state.weave = Math.min(WEAVE_MAX, (state.weave || 0) + WEAVE_PER_CROSSFIRE * relicWeaveMult(state) * workshopWeaveMult(state));
     state.events.push({ type: 'crossfire', x: enemy.x, y: enemy.y });
     addFloat(state, enemy.x, enemy.y - 48, 'CROSSFIRE x' + state.upgradeValues.crossfireMult, '#00E5FF');
   }
   // PASS 7 — CHRONARCH'S CROWN: every hit lands 10% harder.
-  dmg *= relicAllDamageMult(state);
+  // PASS 8 — HUNDRED SLAYER: bosses take 10% more; workshop coil: +5%/level.
+  if (enemy.type === 'warden' || enemy.type === 'chronarch') dmg *= relicBossDamageMult(state);
+  dmg *= relicAllDamageMult(state) * workshopDamageMult(state);
   enemy.hp -= dmg;
   enemy.flashT = 0.12;
   addFloat(state, hitX, hitY - 10, '-' + Math.round(dmg), cross ? '#00E5FF' : '#FFFFFF');
@@ -95,7 +98,7 @@ export function killEnemy(state, enemy, from) {
   enemy.hp = 0;
   state.kills++;
   state.loopKills++;
-  const gain = Math.round(100 * comboMult(state) * state.diff.scoreMul);
+  const gain = Math.round(100 * comboMult(state) * state.diff.scoreMul * workshopScoreMult(state));
   state.score += gain;
   state.loopScore += gain;
   state.combo++; state.comboT = 2;
@@ -203,7 +206,7 @@ export function damagePlayer(state, dmg, sx, sy, srcType) {
   // harder. Loops 1-6 are untouched, so the early game and the hook play
   // exactly as before; only the endgame regains its teeth. Measured: the
   // bot takes exactly one hit per run, always a sniper bolt in loops 7-9.
-  const final = dmg * state.diff.dmgMul * (state.loop >= 7 ? 1.2 : 1);
+  const final = dmg * state.diff.dmgMul * (state.loop >= 7 ? 1.2 : 1) * workshopTakenMult(state);
   p.hp -= final;
   p.invulnT = 0.5;
   state.combo = 0; state.comboT = 0;
