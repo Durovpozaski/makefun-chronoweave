@@ -9,7 +9,7 @@ import { render, winLoseBanner, achievementsFor } from './ui/DiegeticHUDRenderer
 import { SynthAudioEngine } from './audio/SynthAudioEngine.js';
 import { rollOffers, applyUpgrade, upgradeValues } from './systems/ParadoxUpgradeSystem.js';
 import { createEcho } from './systems/TimelineRecorderSystem.js';
-import { layoutPillars, spawnWave } from './systems/ArenaDirector.js';
+import { layoutPillars, spawnWave, makeEnemy } from './systems/ArenaDirector.js';
 
 const canvas = document.getElementById('game');
 canvas.width = W; canvas.height = H;
@@ -158,21 +158,56 @@ window.__chronoweave = {
   achievements() { return achievementsFor(state); },
   toTitle() { goTitle(state); },
   setScore(n) { state.score = n; },
-  setBest(n) { state.best = n; try { window.localStorage.setItem('chronoweave-best', String(n)); } catch (e) { /* ignore */ } },
+  setBest(n) {
+    state.best = n;
+    // PASS 6: the staged best is also the staged best for this difficulty,
+    // so the title's per-difficulty BEST reads the same number.
+    state.difficultyBest[state.difficulty] = Math.max(state.difficultyBest[state.difficulty] || 0, n);
+    try {
+      window.localStorage.setItem('chronoweave-best', String(n));
+      window.localStorage.setItem('chronoweave-best-by-diff', JSON.stringify(state.difficultyBest));
+    } catch (e) { /* ignore */ }
+  },
+  // PASS 6: cover staging — the screenshot script sets this after startRun
+  // (startRun replaces the state object, so it must be set after).
+  setCoverMode(on) { state.coverMode = !!on; },
+  // PASS 6: add one live enemy of a type to the staged wave (a real
+  // makeEnemy, so the cover HUD's FOES list counts it exactly).
+  addEnemy(type, x, y) { const e = makeEnemy(state, type, x, y, false); state.enemies.push(e); state.waveTotal = state.enemies.length; return e; },
   forceDraft() {
     state.pendingOffers = rollOffers(state);
     state.draftKind = 'clear';
     state.screen = 'draft';
   },
   forceWin() {
-    // Staged win screen: same BEST as every other staged shot (15,840).
+    // PASS 6 staged win: the best real bot run, seed 1, measured live
+    // (step(60) batches, twice, identical): score 25,977, 93 kills,
+    // 24 crossfires, 27 shield breaks, 9 rewinds, 5 surges, 320 shots /
+    // 188 hits (59%), 75.3s, hp 125/150, 4 max echoes. The per-loop
+    // rows are the run's real loops 1-9; loop 10 is the remainder
+    // (25,977 - 21,460 = 4,517, 13 kills), so the bars sum to the final
+    // score and the kills sum to 93. SAME BEST as every other staged
+    // shot, so BEST is identical on all four screenshots.
     state.loop = 10;
-    state.score = 15840;
-    state.best = 15840;
-    state.perLoop = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((l) => ({ loop: l, kills: 4 + (l % 3), score: 900 + l * 160, time: 9.4 }));
-    state.kills = 52; state.crossfires = 14; state.shieldBreaks = 11; state.rewinds = 9; state.surges = 3;
-    state.runTime = 105; // staged run time: 10 loops at ~9.4s + rewinds/drafts.
-    state.shotsFired = 640; state.shotsHit = 410;
+    state.score = 25977;
+    state.best = 25977;
+    state.perLoop = [
+      { loop: 1, kills: 1, score: 100, time: 6.5 },
+      { loop: 2, kills: 2, score: 250, time: 6.5 },
+      { loop: 3, kills: 7, score: 1030, time: 6.5 },
+      { loop: 4, kills: 10, score: 1830, time: 6.5 },
+      { loop: 5, kills: 4, score: 630, time: 6.5 },
+      { loop: 6, kills: 10, score: 2110, time: 3.9 },
+      { loop: 7, kills: 14, score: 5530, time: 4.5 },
+      { loop: 8, kills: 19, score: 8210, time: 6 },
+      { loop: 9, kills: 13, score: 1770, time: 7.3 },
+      { loop: 10, kills: 13, score: 4517, time: 9.9 },
+    ];
+    state.kills = 93; state.crossfires = 24; state.shieldBreaks = 27; state.rewinds = 9; state.surges = 5;
+    state.shotsFired = 320; state.shotsHit = 188;
+    state.runTime = 75.3;
+    state.maxEchoes = 4;
+    state.player.hp = 125; state.player.maxHp = 150;
     state.win = true; state.winGrade = 'S'; state.newBest = true;
     state.screen = 'summary';
     // The staged win bypasses toSummary, so record the run here — the
@@ -188,14 +223,14 @@ function applyShotPreset() {
   if (!shot) return;
   state.bot = false;
   if (shot === 'cover') {
-    window.__chronoweave.setBest(15840);
+    window.__chronoweave.setBest(25977);
     startRun(state, 'steady', Number(q.get('seed') || 7));
     window.__chronoweave.forceLoop(10);
     state.score = 12400; state.combo = 24; state.comboT = 2;
     state.chainShown = 3; state.chainT = 0.9; // staged CHAIN x3 callout: combo 24 genuinely reaches x3
     state.bot = true;
   } else if (shot === 'upgrade') {
-    window.__chronoweave.setBest(15840);
+    window.__chronoweave.setBest(25977);
     startRun(state, 'steady', 7);
     // Stage a real Loop 6 draft: forceLoop spawns the Loop 6 wave first, so
     // the NEXT-LOOP preview on the draft screen counts the actual wave.
@@ -203,7 +238,7 @@ function applyShotPreset() {
     state.score = 8300;
     window.__chronoweave.forceDraft();
   } else if (shot === 'win') {
-    window.__chronoweave.setBest(15840);
+    window.__chronoweave.setBest(25977);
     startRun(state, 'steady', 7);
     window.__chronoweave.forceWin();
   }

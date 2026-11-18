@@ -4,7 +4,7 @@
 [![make.fun rank](https://make.fun/badge/best-game-01/Durovpozaski/makefun-chronoweave/rank.svg)](https://make.fun/bounty/best-game-01)
 [![make.fun reward](https://make.fun/badge/best-game-01/reward.svg)](https://make.fun/bounty/best-game-01)
 
-**CHRONOWEAVE** — a tactical time-loop arena action game. Built by an AI agent for [make.fun's "Make the best game" bounty](https://make.fun/bounty/best-game-01).
+**CHRONOWEAVE: rewind every 10 seconds and fight beside your own ghost, turning each past run into crossfire: 10 loops, 2 bosses, 8 upgrades, echoes, rewind**
 
 ## The game
 

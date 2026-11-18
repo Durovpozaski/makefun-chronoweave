@@ -61,8 +61,16 @@ export function newRun(difficulty, seed) {
     // at once (ECHO ARMY achievement), and the last 3 runs for the title.
     chainShown: 1, chainT: 0, maxEchoes: 0, lastRuns: [],
     banner: null, events: [],
+    // PASS 6: per-difficulty bests for the title screen, and the cover
+    // staging flag (set by the screenshot script after startRun).
+    difficultyBest: { slow: 0, steady: 0, storm: 0 },
+    coverMode: false,
   };
   try { st.best = Number(window.localStorage.getItem('chronoweave-best') || 0); } catch (e) { st.best = 0; }
+  try {
+    const db = JSON.parse(window.localStorage.getItem('chronoweave-best-by-diff') || '{}');
+    for (const d of ['slow', 'steady', 'storm']) if (typeof db[d] === 'number') st.difficultyBest[d] = db[d];
+  } catch (e) { /* no storage */ }
   try {
     const raw = window.localStorage.getItem('chronoweave-runs');
     const arr = raw ? JSON.parse(raw) : [];
@@ -254,6 +262,12 @@ function toSummary(state, win, reason) {
       try { window.localStorage.setItem('chronoweave-best', String(state.best)); } catch (e) { /* no storage */ }
     }
     state.events.push({ type: 'lose' });
+  }
+  // PASS 6: per-difficulty best — the title screen shows BEST under each
+  // difficulty. A losing run can still set its difficulty's best.
+  if (state.score > (state.difficultyBest[state.difficulty] || 0)) {
+    state.difficultyBest[state.difficulty] = state.score;
+    try { window.localStorage.setItem('chronoweave-best-by-diff', JSON.stringify(state.difficultyBest)); } catch (e) { /* no storage */ }
   }
   // Pass 4: record the run for the title screen's LAST RUNS (win or lose).
   recordRun(state);

@@ -127,6 +127,7 @@ export function render(ctx, state, input) {
   drawBolts(ctx, state);
   drawParticles(ctx, state);
   drawFloats(ctx, state);
+  if (state.coverMode) drawCoverLight(ctx, state);
   ctx.restore();
 
   input.clickRects.length = 0;
@@ -152,6 +153,29 @@ export function render(ctx, state, input) {
     text(ctx, '↻  RESTART  (R)', 640, 437, 'bold 19px system-ui, sans-serif', '#FFFFFF', 'center');
     input.clickRects.push({ kind: 'restart', x: 540, y: 410, w: 200, h: 52 });
   }
+}
+
+// PASS 6 — cover staging light: a dark vignette plus ONE bright focal
+// glow on the boss. Staging only (state.coverMode, set by the screenshot
+// script): the live game keeps its alabaster/slate arena. Drawn over the
+// arena and entities but under the HUD, so every label stays readable.
+function drawCoverLight(ctx, state) {
+  const b = state.boss || { x: 640, y: 255 };
+  // Focal glow: a warm gold-white pool centred on the boss, fading out.
+  const g = ctx.createRadialGradient(b.x, b.y, 20, b.x, b.y, 330);
+  g.addColorStop(0, 'rgba(255,214,120,0.45)');
+  g.addColorStop(0.45, 'rgba(245,184,29,0.16)');
+  g.addColorStop(1, 'rgba(245,184,29,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  // Vignette: the arena edges fall to slate, the centre stays lit.
+  const v = ctx.createRadialGradient(640, 360, 240, 640, 360, 760);
+  v.addColorStop(0, 'rgba(20,24,31,0)');
+  v.addColorStop(0.45, 'rgba(20,24,31,0.14)');
+  v.addColorStop(0.75, 'rgba(20,24,31,0.48)');
+  v.addColorStop(1, 'rgba(20,24,31,0.74)');
+  ctx.fillStyle = v;
+  ctx.fillRect(0, 0, W, H);
 }
 
 function drawArena(ctx, state) {
@@ -266,7 +290,17 @@ function drawEnemies(ctx, state) {
     shadow(ctx, e.x, e.y, e.radius, e.radius * 0.6);
     const flash = e.flashT > 0;
     if (e.type === 'guardian' || e.type === 'warden' || e.type === 'chronarch') {
-      const R = e.radius;
+      // PASS 6: in the staged cover the boss reads 2x larger, with a glow
+      // ring — same entity, same hitbox, only the drawn size changes.
+      const R = e.radius * (state.coverMode && (e.type === 'chronarch' || e.type === 'warden') ? 2 : 1);
+      if (state.coverMode && (e.type === 'chronarch' || e.type === 'warden')) {
+        ctx.strokeStyle = 'rgba(255,214,120,0.35)';
+        ctx.lineWidth = 12;
+        ctx.beginPath(); ctx.arc(e.x, e.y, R + 26, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = 'rgba(245,184,29,0.55)';
+        ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.arc(e.x, e.y, R + 26, 0, Math.PI * 2); ctx.stroke();
+      }
       // Body: dark slate hex.
       ctx.fillStyle = flash ? '#FFFFFF' : COLOURS.guardian;
       ctx.beginPath();
@@ -528,6 +562,36 @@ function drawPlayHUD(ctx, state, input) {
   }
   // UPGRADES chip (Pass 4): owned / 8, in the right-hand systems stack.
   text(ctx, 'UPGRADES  ' + state.upgradesOwned.length + '/' + UPGRADES.length, 1256, 230, 'bold 14px system-ui, sans-serif', '#14181F', 'right');
+  // PASS 6 — cover-only density panels. Both read live state, so the lists
+  // always match the staged wave and the owned upgrades exactly: the enemy
+  // list counts state.enemies by type, the owned list names
+  // state.upgradesOwned. Live play keeps the clean HUD.
+  if (state.coverMode) {
+    const eCounts = {};
+    for (const e of state.enemies) eCounts[e.type] = (eCounts[e.type] || 0) + 1;
+    const eOrder = ['chronarch', 'warden', 'guardian', 'sniper', 'bomber', 'chaser', 'splitter', 'phantom'];
+    const eIcons = { guardian: '🛡', sniper: '🎯', bomber: '💣', chaser: '➤', splitter: '✦', phantom: '👻', warden: '♛', chronarch: '🕐' };
+    const eNames = { guardian: 'AEGIS GUARDIAN', sniper: 'CHRONO SNIPER', bomber: 'RIFT BOMBER', chaser: 'CHASER', splitter: 'SPLITTER', phantom: 'STOLEN ECHO', warden: 'THE WARDEN', chronarch: 'THE CHRONARCH' };
+    const eRows = eOrder.filter((t) => eCounts[t]);
+    ctx.fillStyle = 'rgba(22,28,37,0.78)';
+    rr(ctx, 24, 150, 246, 26 + eRows.length * 20, 8); ctx.fill();
+    text(ctx, 'FOES — LOOP ' + state.loop, 38, 164, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'left');
+    eRows.forEach((t, i) => {
+      text(ctx, eIcons[t] + '  ' + eNames[t] + '  ×' + eCounts[t], 38, 186 + i * 20, 'bold 13px system-ui, sans-serif', '#FFFFFF', 'left');
+    });
+    const ownedNames = state.upgradesOwned.map((id) => {
+      const u = UPGRADES.find((o) => o.id === id);
+      return u ? u.icon + '  ' + u.name : id.toUpperCase();
+    });
+    const shown = ownedNames.slice(0, 3);
+    ctx.fillStyle = 'rgba(22,28,37,0.78)';
+    rr(ctx, 1016, 244, 240, 26 + shown.length * 20 + (ownedNames.length > 3 ? 18 : 0), 8); ctx.fill();
+    text(ctx, 'OWNED UPGRADES', 1242, 258, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'right');
+    shown.forEach((n, i) => {
+      text(ctx, n, 1242, 280 + i * 20, 'bold 13px system-ui, sans-serif', '#FFFFFF', 'right');
+    });
+    if (ownedNames.length > 3) text(ctx, '… +' + (ownedNames.length - 3) + ' more', 1242, 280 + shown.length * 20, '12px system-ui, sans-serif', '#C9C2B2', 'right');
+  }
   // HP bar, bottom-left.
   ctx.fillStyle = 'rgba(22,28,37,0.8)';
   rr(ctx, 24, 664, 260, 22, 8); ctx.fill();
@@ -561,13 +625,16 @@ function drawPlayHUD(ctx, state, input) {
   // below the loop banner (330) and above the floor action, so it never
   // covers the boss name (y=261 on the staged cover) or the banner.
   if (state.chainT > 0 && (state.chainShown || 1) >= 2) {
+    // PASS 6: in the staged cover the boss is 2x larger and its name sits
+    // at y~383, so the callout drops below it instead of stacking on it.
+    const chainY = state.coverMode ? 436 : 390;
     ctx.globalAlpha = clamp(state.chainT, 0, 1);
     ctx.font = 'bold 44px system-ui, sans-serif';
     ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(20,24,31,0.85)';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.strokeText('CHAIN ×' + state.chainShown + '!', 640, 390);
+    ctx.strokeText('CHAIN ×' + state.chainShown + '!', 640, chainY);
     ctx.fillStyle = COLOURS.gold;
-    ctx.fillText('CHAIN ×' + state.chainShown + '!', 640, 390);
+    ctx.fillText('CHAIN ×' + state.chainShown + '!', 640, chainY);
     ctx.globalAlpha = 1;
   }
 }
@@ -599,6 +666,8 @@ function drawTitle(ctx, state, input) {
   text(ctx, 'CHRONOWEAVE', 640, 96, 'bold 62px system-ui, sans-serif', '#FFFFFF', 'center');
   text(ctx, 'YOUR PAST SELF FIGHTS BESIDE YOU.', 640, 134, 'bold 27px system-ui, sans-serif', COLOURS.gold, 'center');
   text(ctx, 'Rewind to multiply. Crossfire to charge the Weave.', 640, 160, 'italic 17px system-ui, sans-serif', '#7DF3FF', 'center');
+  // PASS 6 — counts line: the run's scale in one glance.
+  text(ctx, '10 LOOPS  ·  2 BOSSES  ·  8 UPGRADES  ·  5 FOES  ·  ECHOES  ·  REWIND', 640, 178, 'bold 15px system-ui, sans-serif', COLOURS.gold, 'center');
   // 3-panel diagram: FIGHT → REWIND → ECHO REPLAYS.
   const panels = [
     { n: '1', title: 'FIGHT 10s', sub: 'WASD move · mouse aim · click shoot', col: COLOURS.crimson },
@@ -607,7 +676,7 @@ function drawTitle(ctx, state, input) {
   ];
   panels.forEach((pn, i) => {
     const x = 190 + i * 310;
-    const y = 182;
+    const y = 196;
     ctx.fillStyle = 'rgba(255,255,255,0.08)';
     rr(ctx, x, y, 280, 96, 10); ctx.fill();
     ctx.strokeStyle = pn.col; ctx.lineWidth = 2;
@@ -620,22 +689,30 @@ function drawTitle(ctx, state, input) {
     if (i < 2) text(ctx, '➜', x + 282, y + 48, 'bold 22px system-ui, sans-serif', '#FFFFFF', 'center');
   });
   // HOW TO PLAY + enemy list, two columns.
-  text(ctx, 'HOW TO PLAY', 190, 306, 'bold 16px system-ui, sans-serif', COLOURS.gold, 'left');
+  text(ctx, 'HOW TO PLAY', 190, 320, 'bold 16px system-ui, sans-serif', COLOURS.gold, 'left');
   const how = [
     'WASD / arrows — move     ·     Mouse — aim     ·     Click / hold — fire lasers',
     'SHIFT / SPACE — dash (brief invulnerability)     ·     Q / R — rewind early',
     'E — Stasis Grenade (once unlocked)     ·     P — pause     ·     M — mute',
     'Guardians block shots from the FRONT — let an echo distract them, then backstab.',
-    'Every loop ends in a draft: pick 1 of 3 upgrades. Beat THE CHRONARCH on Loop 10 to win.',
   ];
-  how.forEach((h, i) => text(ctx, h, 190, 328 + i * 21, '14px system-ui, sans-serif', '#EDEAE2', 'left'));
-  text(ctx, 'MEET THE ENEMY', 190, 442, 'bold 16px system-ui, sans-serif', COLOURS.gold, 'left');
+  how.forEach((h, i) => text(ctx, h, 190, 342 + i * 21, '14px system-ui, sans-serif', '#EDEAE2', 'left'));
+  text(ctx, 'MEET THE ENEMY', 190, 434, 'bold 16px system-ui, sans-serif', COLOURS.gold, 'left');
   const foes = ['guardian', 'sniper', 'bomber', 'chaser', 'splitter', 'warden', 'chronarch'];
   foes.forEach((t, i) => {
     const [icon, name] = ENEMY_LABELS[t];
     const x = 190 + (i % 4) * 235;
-    const y = 468 + Math.floor(i / 4) * 30;
+    const y = 460 + Math.floor(i / 4) * 30;
     text(ctx, icon + '  ' + name, x, y, 'bold 13px system-ui, sans-serif', '#FFFFFF', 'left');
+  });
+  // PASS 6 — the goal and the stakes in one line (the old fifth HOW TO PLAY
+  // line said the same thing in small print), plus BEST per difficulty.
+  text(ctx, 'GOAL: BEAT THE CHRONARCH ON LOOP 10  ·  DRAFT AFTER EVERY LOOP  ·  WIN: CLEAR ALL 10 LOOPS  ·  LOSE: HP 0', 640, 520, 'bold 14px system-ui, sans-serif', '#FFFFFF', 'center');
+  const db = state.difficultyBest || {};
+  DIFFICULTY_ORDER.forEach((d, i) => {
+    const cx = 250 + i * 210 + 95;
+    const b = db[d] || 0;
+    text(ctx, 'BEST  ' + (b > 0 ? b.toLocaleString('en-US') : '—'), cx, 544, 'bold 13px system-ui, sans-serif', b > 0 ? COLOURS.gold : '#7A7F88', 'center');
   });
   // Difficulty buttons.
   DIFFICULTY_ORDER.forEach((d, i) => {
@@ -734,6 +811,11 @@ function drawDraft(ctx, state, input) {
   if (first) prev += '— arena clear —';
   text(ctx, prev, 640, 548, 'bold 16px system-ui, sans-serif', COLOURS.cyan, 'center');
   text(ctx, 'ECHOES ' + state.echoes.length + '/' + echoSlots(state), 640, 576, 'bold 14px system-ui, sans-serif', '#C9C2B2', 'center');
+  // PASS 6 — loop-map strip: the 10-loop road at a glance (display only —
+  // no road choice, no new system). Boss loops 5 and 10 are gold-outlined,
+  // cleared loops gold, the loop you are about to play cyan.
+  text(ctx, 'LOOP MAP — YOU ARE HEADING INTO LOOP ' + state.loop, 640, 602, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'center');
+  drawLoopTrack(ctx, 640, 622, 30, 12, clamp(state.loop - 1, 0, 10), state.loop, false, true);
 }
 
 // ---- Summary ----
