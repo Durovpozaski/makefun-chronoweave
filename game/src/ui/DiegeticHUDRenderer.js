@@ -83,6 +83,26 @@ function killerLine(state) {
   return 'Overwhelmed on Loop ' + state.loop + '.';
 }
 
+// WIN/LOSE banner with live values (Pass 4): the goal and the price,
+// with the numbers as they stand right now.
+export function winLoseBanner(state) {
+  return 'WIN: BEAT THE CHRONARCH — LOOP ' + state.loop + '/' + MAX_LOOPS +
+    '  ·  LOSE: HP 0 — ' + Math.ceil(state.player.hp) + '/' + state.player.maxHp;
+}
+// Achievements (Pass 4): derived ONLY from data the run already tracks.
+// Earned ones gold, unearned grey; shown on the win screen.
+export const ACHIEVEMENTS = [
+  { id: 'weave', name: 'WEAVE MASTER', desc: '10+ crossfires', test: (s) => s.crossfires >= 10 },
+  { id: 'echo', name: 'ECHO ARMY', desc: '4 echoes at once', test: (s) => (s.maxEchoes || 0) >= 4 },
+  { id: 'untouched', name: 'UNTOUCHED', desc: 'win at 80+ HP', test: (s) => s.win && s.player.hp >= 80 },
+  { id: 'shield', name: 'SHIELDBREAKER', desc: '10+ shield breaks', test: (s) => s.shieldBreaks >= 10 },
+  { id: 'paradox', name: 'PARADOX', desc: '3+ Paradox Surges', test: (s) => (s.surges || 0) >= 3 },
+  { id: 'sharp', name: 'SHARPSHOOTER', desc: '70%+ accuracy', test: (s) => (s.shotsFired ? s.shotsHit / s.shotsFired : 0) >= 0.7 },
+];
+export function achievementsFor(state) {
+  return ACHIEVEMENTS.map((a) => ({ name: a.name, desc: a.desc, earned: !!a.test(state) }));
+}
+
 const ENEMY_LABELS = {
   guardian: ['🛡', 'AEGIS GUARDIAN', 'Shield front — backstab it'],
   sniper: ['🎯', 'CHRONO SNIPER', 'Telegraphed piercing shot'],
@@ -403,10 +423,10 @@ function drawBanner(ctx, state) {
 // ---- HUD (play / rewind) ----
 function drawPlayHUD(ctx, state, input) {
   const p = state.player;
-  // WIN/LOSE bar.
+  // WIN/LOSE bar, with live values (Pass 4): current loop and current HP.
   ctx.fillStyle = 'rgba(22,28,37,0.88)';
-  rr(ctx, 24, 24, 360, 32, 8); ctx.fill();
-  text(ctx, 'WIN: BEAT THE CHRONARCH  ·  LOSE: HP 0', 40, 41, 'bold 13px system-ui, sans-serif', '#FFFFFF', 'left');
+  rr(ctx, 24, 24, 500, 32, 8); ctx.fill();
+  text(ctx, winLoseBanner(state), 40, 41, 'bold 12px system-ui, sans-serif', '#FFFFFF', 'left');
   // Score block.
   text(ctx, 'SCORE  ' + state.score.toLocaleString('en-US'), 24, 84, 'bold 26px system-ui, sans-serif', '#14181F', 'left');
   text(ctx, 'BEST  ' + Math.max(state.best, state.score).toLocaleString('en-US'), 24, 108, '13px system-ui, sans-serif', '#3A4454', 'left');
@@ -506,6 +526,8 @@ function drawPlayHUD(ctx, state, input) {
     ctx.fillStyle = weaveReady ? COLOURS.gold : COLOURS.cyan;
     rr(ctx, 1096, 202, 160 * (wv / 100), 10, 5); ctx.fill();
   }
+  // UPGRADES chip (Pass 4): owned / 8, in the right-hand systems stack.
+  text(ctx, 'UPGRADES  ' + state.upgradesOwned.length + '/' + UPGRADES.length, 1256, 230, 'bold 14px system-ui, sans-serif', '#14181F', 'right');
   // HP bar, bottom-left.
   ctx.fillStyle = 'rgba(22,28,37,0.8)';
   rr(ctx, 24, 664, 260, 22, 8); ctx.fill();
@@ -532,6 +554,21 @@ function drawPlayHUD(ctx, state, input) {
     ctx.fillStyle = 'rgba(125,243,255,0.12)';
     ctx.fillRect(0, 0, W, H);
     text(ctx, '❄ STASIS — enemies frozen', 640, 210, 'bold 20px system-ui, sans-serif', '#0E7C8C', 'center');
+  }
+  // CHAIN callout (Pass 4): one big centre fanfare when the combo
+  // multiplier crosses x2/x3/x4/x5. ~1s, never stacked — the engine only
+  // sets it on a fresh crossing, and it fades out on its own. y=390 sits
+  // below the loop banner (330) and above the floor action, so it never
+  // covers the boss name (y=261 on the staged cover) or the banner.
+  if (state.chainT > 0 && (state.chainShown || 1) >= 2) {
+    ctx.globalAlpha = clamp(state.chainT, 0, 1);
+    ctx.font = 'bold 44px system-ui, sans-serif';
+    ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(20,24,31,0.85)';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.strokeText('CHAIN ×' + state.chainShown + '!', 640, 390);
+    ctx.fillStyle = COLOURS.gold;
+    ctx.fillText('CHAIN ×' + state.chainShown + '!', 640, 390);
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -620,6 +657,16 @@ function drawTitle(ctx, state, input) {
   text(ctx, '▶  START SHIFT', 640, 647, 'bold 22px system-ui, sans-serif', '#FFFFFF', 'center');
   input.clickRects.push({ kind: 'start', x: 470, y: 620, w: 340, h: 52 });
   text(ctx, 'BEST  ' + state.best.toLocaleString('en-US'), 1090, 64, 'bold 15px system-ui, sans-serif', COLOURS.gold, 'right');
+  // LAST RUNS (Pass 4): the last 3 runs, newest first. Empty state shows
+  // nothing — no placeholder.
+  const runs = state.lastRuns || [];
+  if (runs.length) {
+    text(ctx, 'LAST RUNS', 1090, 90, 'bold 12px system-ui, sans-serif', COLOURS.gold, 'right');
+    runs.forEach((r, i) => {
+      const s = r.w ? (r.g || 'W') + '  ' + r.score.toLocaleString('en-US') : 'FELL L' + r.loop + '  ·  ' + r.score.toLocaleString('en-US');
+      text(ctx, s, 1090, 110 + i * 18, '12px system-ui, sans-serif', '#EDEAE2', 'right');
+    });
+  }
 }
 
 // ---- Draft ----
@@ -697,20 +744,27 @@ function drawSummary(ctx, state, input) {
   rr(ctx, 240, 56, 800, 608, 18); ctx.fill();
   ctx.strokeStyle = COLOURS.gold; ctx.lineWidth = 2;
   rr(ctx, 240, 56, 800, 608, 18); ctx.stroke();
+  // Layout: the WIN screen carries an achievements block, so its rows sit
+  // higher and the graph is compact; the LOSE screen keeps the exact Pass 3
+  // layout (already verified and viewed) — only the buttons move, and the
+  // old PLAY AGAIN click point (640,626) still lands inside the button.
+  const L = state.win
+    ? { cy: 150, banner: 238, score: 304, best: 334, statL: 366, statV: 392, track: 490, graphL: 518, graphTop: 568, graphH: 40, graphLab: 580 }
+    : { cy: 160, banner: 252, score: 322, best: 356, statL: 392, statV: 418, track: 448, graphL: 482, graphTop: 562, graphH: 70, graphLab: 576 };
   // Grade circle.
   const g = state.win ? (state.winGrade || 'B') : '—';
   ctx.fillStyle = state.win ? COLOURS.gold : '#3A4454';
-  ctx.beginPath(); ctx.arc(640, 160, 62, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(640, L.cy, 62, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.arc(640, 160, 62, 0, Math.PI * 2); ctx.stroke();
-  text(ctx, g, 640, 164, 'bold 64px system-ui, sans-serif', state.win ? '#14181F' : '#FFFFFF', 'center');
+  ctx.beginPath(); ctx.arc(640, L.cy, 62, 0, Math.PI * 2); ctx.stroke();
+  text(ctx, g, 640, L.cy + 4, 'bold 64px system-ui, sans-serif', state.win ? '#14181F' : '#FFFFFF', 'center');
   // Lose screen: the loop that killed you, big — and the killer, named.
   // Win screen keeps its banner line.
   text(ctx, state.win ? 'ALL 10 LOOPS CLEARED — THE CHRONARCH FALLS' : 'FELL ON LOOP ' + state.loop,
-    640, 252, 'bold 26px system-ui, sans-serif', state.win ? '#FFFFFF' : COLOURS.crimsonSoft, 'center');
+    640, L.banner, 'bold 26px system-ui, sans-serif', state.win ? '#FFFFFF' : COLOURS.crimsonSoft, 'center');
   if (!state.win) text(ctx, killerLine(state), 640, 284, '16px system-ui, sans-serif', '#C9C2B2', 'center');
-  text(ctx, 'FINAL SCORE  ' + state.score.toLocaleString('en-US'), 640, 322, 'bold 34px system-ui, sans-serif', COLOURS.gold, 'center');
-  if (state.newBest) text(ctx, '★ NEW BEST ★', 640, 356, 'bold 18px system-ui, sans-serif', '#F5B81D', 'center');
+  text(ctx, 'FINAL SCORE  ' + state.score.toLocaleString('en-US'), 640, L.score, 'bold 34px system-ui, sans-serif', COLOURS.gold, 'center');
+  if (state.newBest) text(ctx, '★ NEW BEST ★', 640, L.best, 'bold 18px system-ui, sans-serif', '#F5B81D', 'center');
   // Stats row — 8 columns now, including total RUN TIME (Pass 3).
   const acc = state.shotsFired ? Math.round((state.shotsHit / state.shotsFired) * 100) : 0;
   const stats = [
@@ -725,29 +779,47 @@ function drawSummary(ctx, state, input) {
   ];
   stats.forEach((s, i) => {
     const x = 292 + i * 100;
-    text(ctx, s[0], x, 392, 'bold 11px system-ui, sans-serif', '#C9C2B2', 'center');
-    text(ctx, s[1], x, 418, 'bold 19px system-ui, sans-serif', '#FFFFFF', 'center');
+    text(ctx, s[0], x, L.statL, 'bold 11px system-ui, sans-serif', '#C9C2B2', 'center');
+    text(ctx, s[1], x, L.statV, 'bold 19px system-ui, sans-serif', '#FFFFFF', 'center');
   });
+  // ACHIEVEMENTS (Pass 4, win only): 6 items from the run's own stats —
+  // earned gold, unearned grey — in two rows of three.
+  if (state.win) {
+    text(ctx, 'ACHIEVEMENTS', 640, 418, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'center');
+    achievementsFor(state).forEach((a, i) => {
+      const x = 370 + (i % 3) * 270;
+      const y = 440 + Math.floor(i / 3) * 22;
+      text(ctx, (a.earned ? '★ ' : '☆ ') + a.name + ' — ' + a.desc, x, y, '13px system-ui, sans-serif', a.earned ? '#F5B81D' : '#7A7F88', 'center');
+    });
+  }
   // LOOP-PROGRESS TRACK (Pass 3): win — all 10 filled gold; lose — filled
   // up to the loop reached, the killing loop crimson, the rest unreached.
-  drawLoopTrack(ctx, 640, 448, 44, 12, state.win ? 10 : clamp(state.loop - 1, 0, 10),
+  drawLoopTrack(ctx, 640, L.track, 44, 12, state.win ? 10 : clamp(state.loop - 1, 0, 10),
     state.win ? 0 : state.loop, !state.win, true);
   // Per-loop bar graph.
-  text(ctx, 'SCORE PER LOOP', 640, 482, 'bold 13px system-ui, sans-serif', '#C9C2B2', 'center');
+  text(ctx, 'SCORE PER LOOP', 640, L.graphL, 'bold 13px system-ui, sans-serif', '#C9C2B2', 'center');
   const loops = state.perLoop.slice(0, 10);
   const maxS = Math.max(1, ...loops.map((l) => l.score));
   loops.forEach((l, i) => {
-    const x = 340 + i * 62, h = Math.max(4, (l.score / maxS) * 70);
+    const x = 340 + i * 62, h = Math.max(4, (l.score / maxS) * L.graphH);
     ctx.fillStyle = l.loop === 10 ? COLOURS.gold : COLOURS.cyan;
-    ctx.fillRect(x, 562 - h, 40, h);
-    text(ctx, 'L' + l.loop, x + 20, 576, '11px system-ui, sans-serif', '#C9C2B2', 'center');
+    ctx.fillRect(x, L.graphTop - h, 40, h);
+    text(ctx, 'L' + l.loop, x + 20, L.graphLab, '11px system-ui, sans-serif', '#C9C2B2', 'center');
   });
-  if (!loops.length) text(ctx, 'No loop cleared yet.', 640, 520, '14px system-ui, sans-serif', '#C9C2B2', 'center');
-  // PLAY AGAIN on a win, TRY AGAIN on a loss — same restart path (R).
+  if (!loops.length) text(ctx, 'No loop cleared yet.', 640, L.graphL + 38, '14px system-ui, sans-serif', '#C9C2B2', 'center');
+  // PLAY AGAIN on a win, TRY AGAIN on a loss — same restart path (R) — and
+  // TITLE (T) beside it, back to the title screen. The pair is centred on
+  // 640, and the old PLAY AGAIN click point (640,626) still lands inside.
   ctx.fillStyle = COLOURS.crimson;
-  rr(ctx, 470, 600, 340, 52, 10); ctx.fill();
+  rr(ctx, 400, 600, 280, 52, 10); ctx.fill();
   ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2;
-  rr(ctx, 470, 600, 340, 52, 10); ctx.stroke();
-  text(ctx, state.win ? '↻  PLAY AGAIN  (R)' : '↻  TRY AGAIN  (R)', 640, 627, 'bold 20px system-ui, sans-serif', '#FFFFFF', 'center');
-  input.clickRects.push({ kind: 'restart', x: 470, y: 600, w: 340, h: 52 });
+  rr(ctx, 400, 600, 280, 52, 10); ctx.stroke();
+  text(ctx, state.win ? '↻  PLAY AGAIN  (R)' : '↻  TRY AGAIN  (R)', 540, 627, 'bold 20px system-ui, sans-serif', '#FFFFFF', 'center');
+  input.clickRects.push({ kind: 'restart', x: 400, y: 600, w: 280, h: 52 });
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  rr(ctx, 700, 600, 200, 52, 10); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2;
+  rr(ctx, 700, 600, 200, 52, 10); ctx.stroke();
+  text(ctx, 'TITLE  (T)', 800, 627, 'bold 20px system-ui, sans-serif', '#FFFFFF', 'center');
+  input.clickRects.push({ kind: 'title', x: 700, y: 600, w: 200, h: 52 });
 }

@@ -57,9 +57,17 @@ export function newRun(difficulty, seed) {
     // Pass 3: who killed the player, and how long the run lasted. The lose
     // screen names the killer; the win/lose screens show total run time.
     killerType: null, lastDamager: null, runTime: 0,
+    // Pass 4: chain callout (combo-threshold fanfare), most echoes alive
+    // at once (ECHO ARMY achievement), and the last 3 runs for the title.
+    chainShown: 1, chainT: 0, maxEchoes: 0, lastRuns: [],
     banner: null, events: [],
   };
   try { st.best = Number(window.localStorage.getItem('chronoweave-best') || 0); } catch (e) { st.best = 0; }
+  try {
+    const raw = window.localStorage.getItem('chronoweave-runs');
+    const arr = raw ? JSON.parse(raw) : [];
+    st.lastRuns = Array.isArray(arr) ? arr.filter((r) => r && typeof r.score === 'number').slice(0, 3) : [];
+  } catch (e) { st.lastRuns = []; }
   return st;
 }
 
@@ -76,6 +84,15 @@ export function startRun(state, difficulty, seed) {
   layoutPillars(state);
   spawnWave(state);
   state.banner = { txt: 'LOOP 1 — CLEAR THE ARENA', sub: 'Rewind is your weapon: Q / R', ttl: 2.6 };
+}
+
+// Back to the title screen: a fresh attract-mode run (the demo battle
+// behind the title needs a live run, not the finished one). LAST RUNS
+// survives — newRun reloads it from localStorage, where toSummary saved it.
+export function goTitle(state) {
+  startRun(state, state.difficulty, (state.seed + 1) >>> 0);
+  state.screen = 'title';
+  state.demo = true;
 }
 
 function applyMove(state, ent, inp, dt) {
@@ -158,6 +175,7 @@ function finishRewind(state) {
       const old = state.echoes.shift();
       spawnSparks(state, old.x, old.y, 16, '#00E5FF');
     }
+    state.maxEchoes = Math.max(state.maxEchoes || 0, state.echoes.length);
   }
   state.perLoop.push({ loop: state.loop, kills: state.loopKills, score: state.loopScore, time: Math.round(state.loopElapsed * 10) / 10 });
   const cleared = state.rewindKind === 'clear';
@@ -237,6 +255,16 @@ function toSummary(state, win, reason) {
     }
     state.events.push({ type: 'lose' });
   }
+  // Pass 4: record the run for the title screen's LAST RUNS (win or lose).
+  recordRun(state);
+}
+
+// Shared by toSummary and by the staged win (forceWin): one run record,
+// newest first, keep 3, localStorage wrapped exactly like BEST.
+export function recordRun(state) {
+  const run = { w: !!state.win, g: state.win ? (state.winGrade || 'B') : null, loop: state.loop, score: state.score };
+  state.lastRuns = [run, ...(state.lastRuns || [])].slice(0, 3);
+  try { window.localStorage.setItem('chronoweave-runs', JSON.stringify(state.lastRuns)); } catch (e) { /* no storage */ }
 }
 
 function stepPlay(state, inp, dt, audio, demo) {
@@ -277,6 +305,7 @@ function stepPlay(state, inp, dt, audio, demo) {
       const frames = state.recorder.frames.slice();
       if (frames.length >= 30 && state.echoes.length < 2) {
         state.echoes.push(createEcho(frames, SPAWN.x, SPAWN.y));
+        state.maxEchoes = Math.max(state.maxEchoes || 0, state.echoes.length);
       }
       if (!p.alive) { p.hp = p.maxHp; p.alive = true; }
       state.recorder = createRecorder();
@@ -350,6 +379,7 @@ function updateFx(state, dt) {
   state.flash = Math.max(0, state.flash - dt * 1.4);
   state.slowmoT = Math.max(0, state.slowmoT - dt);
   state.killJuiceCd = Math.max(0, (state.killJuiceCd || 0) - dt);
+  state.chainT = Math.max(0, (state.chainT || 0) - dt);
 }
 
 export function step(state, input, audio, dt) {
@@ -416,6 +446,15 @@ export function step(state, input, audio, dt) {
       inp.stasis = b.stasis || false; inp.rewind = b.rewind || false;
     }
     stepPlay(state, inp, dt, audio, false);
+    // CHAIN callout (Pass 4): when the combo multiplier crosses an integer
+    // threshold (x2/x3/x4/x5), flash the big centre callout once. It resets
+    // when the combo drops, so the next climb can call out again.
+    const mult = Math.floor(1 + state.combo * 0.1);
+    if (state.combo === 0) state.chainShown = 1;
+    else if (mult >= 2 && mult > (state.chainShown || 1)) {
+      state.chainShown = mult;
+      state.chainT = 1.0;
+    }
     updateFx(state, dt);
     drainEvents(state, audio);
     input.clearEdges();
@@ -457,9 +496,15 @@ export function step(state, input, audio, dt) {
 
   if (state.screen === 'summary') {
     if (input.restartPressed) { input.restartPressed = false; startRun(state, state.difficulty, (state.seed + 1) >>> 0); drainEvents(state, audio); return; }
+    if (input.titlePressed) { input.titlePressed = false; goTitle(state); drainEvents(state, audio); return; }
     for (const r of input.clickRects) {
       if (r.kind === 'restart' && input.consumeClick(r)) {
         startRun(state, state.difficulty, (state.seed + 1) >>> 0);
+        drainEvents(state, audio);
+        return;
+      }
+      if (r.kind === 'title' && input.consumeClick(r)) {
+        goTitle(state);
         drainEvents(state, audio);
         return;
       }

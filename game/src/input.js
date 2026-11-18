@@ -8,7 +8,7 @@ export function createInput(canvas) {
     mouseX: 640, mouseY: 360, mouseDown: false,
     clickX: 0, clickY: 0, clickPending: false,
     clickRects: [],
-    startPressed: false, restartPressed: false, pausePressed: false,
+    startPressed: false, restartPressed: false, pausePressed: false, titlePressed: false,
     mutePressed: false, choicePressed: -1, difficultyPressed: -1, rewindPressed: false,
     dashPressed: false, stasisPressed: false,
   };
@@ -21,6 +21,7 @@ export function createInput(canvas) {
     input.keys[e.code] = true;
     if (e.code === 'Enter') input.startPressed = true;
     if (e.code === 'KeyR') { input.restartPressed = true; input.rewindPressed = true; }
+    if (e.code === 'KeyT') input.titlePressed = true;
     if (e.code === 'KeyQ') input.rewindPressed = true;
     if (e.code === 'KeyP' || e.code === 'Escape') input.pausePressed = true;
     if (e.code === 'KeyM') input.mutePressed = true;
@@ -54,7 +55,7 @@ export function createInput(canvas) {
     return false;
   };
   input.clearEdges = function () {
-    input.startPressed = false; input.restartPressed = false; input.pausePressed = false;
+    input.startPressed = false; input.restartPressed = false; input.pausePressed = false; input.titlePressed = false;
     input.mutePressed = false; input.choicePressed = -1; input.difficultyPressed = -1;
     input.dashPressed = false; input.stasisPressed = false; input.rewindPressed = false; input.clickPending = false;
   };

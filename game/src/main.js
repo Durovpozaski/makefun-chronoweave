@@ -4,8 +4,8 @@
 // in try/catch, so one error can never kill the game (DOCKMASTER lesson).
 import { W, H, DT, ARENA, clamp, dist, segmentHitsRect } from './config.js';
 import { createInput } from './input.js';
-import { newRun, startRun, step, setBotDriver, SPAWN } from './core/GameLoopEngine.js';
-import { render } from './ui/DiegeticHUDRenderer.js';
+import { newRun, startRun, step, setBotDriver, goTitle, recordRun, SPAWN } from './core/GameLoopEngine.js';
+import { render, winLoseBanner, achievementsFor } from './ui/DiegeticHUDRenderer.js';
 import { SynthAudioEngine } from './audio/SynthAudioEngine.js';
 import { rollOffers, applyUpgrade, upgradeValues } from './systems/ParadoxUpgradeSystem.js';
 import { createEcho } from './systems/TimelineRecorderSystem.js';
@@ -147,10 +147,16 @@ window.__chronoweave = {
   spawnEcho() {
     if (state.recorder.frames.length >= 30) {
       state.echoes.push(createEcho(state.recorder.frames.slice(), SPAWN.x, SPAWN.y));
+      state.maxEchoes = Math.max(state.maxEchoes || 0, state.echoes.length);
       return true;
     }
     return false;
   },
+  // Pass 4 debug surface: the exact banner string the HUD draws, the
+  // achievements list for the current run, and the title return path.
+  bannerText() { return winLoseBanner(state); },
+  achievements() { return achievementsFor(state); },
+  toTitle() { goTitle(state); },
   setScore(n) { state.score = n; },
   setBest(n) { state.best = n; try { window.localStorage.setItem('chronoweave-best', String(n)); } catch (e) { /* ignore */ } },
   forceDraft() {
@@ -169,6 +175,9 @@ window.__chronoweave = {
     state.shotsFired = 640; state.shotsHit = 410;
     state.win = true; state.winGrade = 'S'; state.newBest = true;
     state.screen = 'summary';
+    // The staged win bypasses toSummary, so record the run here — the
+    // title screen's LAST RUNS must list it like a real win.
+    recordRun(state);
   },
 };
 
@@ -183,6 +192,7 @@ function applyShotPreset() {
     startRun(state, 'steady', Number(q.get('seed') || 7));
     window.__chronoweave.forceLoop(10);
     state.score = 12400; state.combo = 24; state.comboT = 2;
+    state.chainShown = 3; state.chainT = 0.9; // staged CHAIN x3 callout: combo 24 genuinely reaches x3
     state.bot = true;
   } else if (shot === 'upgrade') {
     window.__chronoweave.setBest(15840);
