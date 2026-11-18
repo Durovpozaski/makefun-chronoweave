@@ -170,7 +170,7 @@ export function updateBolts(state, dt) {
     }
     if (!dead && b.from === 'enemy') {
       if (p.alive && dist(nx, ny, p.x, p.y) < p.radius + 4) {
-        damagePlayer(state, b.dmg, nx, ny);
+        damagePlayer(state, b.dmg, nx, ny, b.src || 'enemy');
         dead = true;
       }
       if (!dead) {
@@ -185,20 +185,26 @@ export function updateBolts(state, dt) {
   state.bolts = state.bolts.filter((b) => !b.dead);
 }
 
-export function damagePlayer(state, dmg, sx, sy) {
+// srcType names the enemy that dealt the blow ('sniper', 'bomber', 'warden',
+// ...). Every damaging hit records the most recent damager, and the blow
+// that kills the player records the killer — the lose screen names it. A
+// wrong killer is never shown: the line falls back to the last damager,
+// then the loop's boss, then a nameless line.
+export function damagePlayer(state, dmg, sx, sy, srcType) {
   const p = state.player;
   if (!p.alive || p.invulnT > 0 || p.dashT > 0) return;
+  if (srcType) state.lastDamager = srcType;
   p.hp -= dmg * state.diff.dmgMul;
   p.invulnT = 0.5;
   state.combo = 0; state.comboT = 0;
   state.shake = Math.min(14, state.shake + 6);
   state.events.push({ type: 'playerHit', x: p.x, y: p.y });
   addFloat(state, p.x, p.y - 28, '-' + Math.round(dmg * state.diff.dmgMul), '#FF2E4D');
-  if (p.hp <= 0) { p.hp = 0; p.alive = false; }
+  if (p.hp <= 0) { p.hp = 0; p.alive = false; state.killerType = srcType || state.lastDamager || null; }
 }
 
-export function spawnShockwave(state, x, y) {
-  state.shockwaves.push({ x, y, r: 30, speed: 320, maxR: 560, hit: false });
+export function spawnShockwave(state, x, y, owner) {
+  state.shockwaves.push({ x, y, r: 30, speed: 320, maxR: 560, hit: false, owner: owner || 'warden' });
   state.events.push({ type: 'shockwave', x, y });
 }
 
@@ -210,7 +216,7 @@ export function updateShockwaves(state, dt) {
       const d = dist(p.x, p.y, s.x, s.y);
       if (Math.abs(d - s.r) < 16) {
         s.hit = true;
-        damagePlayer(state, 15, p.x, p.y);
+        damagePlayer(state, 15, p.x, p.y, s.owner || 'warden');
       }
     }
     if (s.r > s.maxR) s.dead = true;

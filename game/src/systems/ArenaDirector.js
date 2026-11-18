@@ -113,7 +113,7 @@ function guardianTarget(state, e) {
 function contactHit(state, e, p, dmg) {
   if (e.contactCd <= 0 && p.alive) {
     e.contactCd = 0.9;
-    damagePlayer(state, dmg, e.x, e.y);
+    damagePlayer(state, dmg, e.x, e.y, e.type);
   }
 }
 
@@ -161,7 +161,7 @@ export function updateEnemies(state, dt) {
         const cadence = e.type === 'chronarch' ? (e.phase >= 3 ? 4 : e.phase === 2 ? 4.5 : 6) : 6;
         if (e.waveT > cadence) {
           e.waveT = 0;
-          spawnShockwave(state, e.x, e.y);
+          spawnShockwave(state, e.x, e.y, e.type);
         }
         // WARDEN PHASE II — telegraphed summon: at 55% HP the Warden starts
         // summoning (1s of gold warning markers + callout) and the snipers
@@ -233,7 +233,7 @@ export function updateEnemies(state, dt) {
           state.bolts.push({
             x: e.x + Math.cos(e.teleAngle) * 20, y: e.y + Math.sin(e.teleAngle) * 20,
             vx: Math.cos(e.teleAngle) * 760, vy: Math.sin(e.teleAngle) * 760,
-            from: 'enemy', dmg: 15, pierce: true, ricochet: false, ricocheted: false, life: 2.2, trail: [],
+            from: 'enemy', src: 'sniper', dmg: 15, pierce: true, ricochet: false, ricocheted: false, life: 2.2, trail: [],
           });
           state.events.push({ type: 'sniperShot', x: e.x, y: e.y });
         }
@@ -252,7 +252,7 @@ export function updateEnemies(state, dt) {
         state.events.push({ type: 'detonate', x: e.x, y: e.y });
         spawnSparks(state, e.x, e.y, 26, '#E4572E');
         state.shake = Math.min(16, state.shake + 8);
-        if (d < 120) damagePlayer(state, 20, e.x, e.y);
+        if (d < 120) damagePlayer(state, 20, e.x, e.y, 'bomber');
         state.rifts.push({ x: e.x, y: e.y, r: 85, ttl: 6 });
         state.kills++; state.loopKills++;
       }

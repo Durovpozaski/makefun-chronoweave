@@ -165,6 +165,7 @@ window.__chronoweave = {
     state.best = 15840;
     state.perLoop = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((l) => ({ loop: l, kills: 4 + (l % 3), score: 900 + l * 160, time: 9.4 }));
     state.kills = 52; state.crossfires = 14; state.shieldBreaks = 11; state.rewinds = 9; state.surges = 3;
+    state.runTime = 105; // staged run time: 10 loops at ~9.4s + rewinds/drafts.
     state.shotsFired = 640; state.shotsHit = 410;
     state.win = true; state.winGrade = 'S'; state.newBest = true;
     state.screen = 'summary';

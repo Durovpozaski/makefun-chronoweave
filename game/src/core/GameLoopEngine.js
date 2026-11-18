@@ -54,6 +54,9 @@ export function newRun(difficulty, seed) {
     bot: false, demo: true, paused: false,
     shake: 0, flash: 0, slowmoT: 0, hitstopT: 0, killJuiceCd: 0, stasisT: 0, stasisCd: 0,
     win: false, loseReason: '', winGrade: null, newBest: false,
+    // Pass 3: who killed the player, and how long the run lasted. The lose
+    // screen names the killer; the win/lose screens show total run time.
+    killerType: null, lastDamager: null, runTime: 0,
     banner: null, events: [],
   };
   try { st.best = Number(window.localStorage.getItem('chronoweave-best') || 0); } catch (e) { st.best = 0; }
@@ -211,6 +214,9 @@ function toSummary(state, win, reason) {
   state.win = win;
   state.loseReason = reason || '';
   state.screen = 'summary';
+  // Snapshot the run clock now: step() keeps advancing state.time on the
+  // summary screen, so the displayed run time must be frozen here.
+  state.runTime = state.time;
   if (win) {
     const gain = Math.round(state.loopTimeLeft * SCORING.winBonusPerSecond);
     state.score += gain;
@@ -222,6 +228,13 @@ function toSummary(state, win, reason) {
     }
     state.events.push({ type: 'win' });
   } else {
+    // A losing run can still be a NEW BEST — the lose screen shows the
+    // badge and the best is saved, exactly like a win.
+    state.newBest = state.score > state.best;
+    if (state.newBest) {
+      state.best = state.score;
+      try { window.localStorage.setItem('chronoweave-best', String(state.best)); } catch (e) { /* no storage */ }
+    }
     state.events.push({ type: 'lose' });
   }
 }
@@ -373,6 +386,17 @@ export function step(state, input, audio, dt) {
   }
 
   if (state.paused) {
+    // Quick restart from pause: R key, or the clickable RESTART button.
+    // startRun() replaces the whole state — score 0, loop 1, no upgrades,
+    // no echoes, no fray, weave 0 — so a restart is always a fresh run.
+    if (input.restartPressed) { input.restartPressed = false; startRun(state, state.difficulty, (state.seed + 1) >>> 0); drainEvents(state, audio); return; }
+    for (const r of input.clickRects) {
+      if (r.kind === 'restart' && input.consumeClick(r)) {
+        startRun(state, state.difficulty, (state.seed + 1) >>> 0);
+        drainEvents(state, audio);
+        return;
+      }
+    }
     if (input.pausePressed) { state.paused = false; input.pausePressed = false; }
     input.clearEdges();
     return;

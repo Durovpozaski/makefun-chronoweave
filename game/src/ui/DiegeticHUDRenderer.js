@@ -28,6 +28,60 @@ function shadow(ctx, x, y, rx, ry) {
   ctx.fillStyle = 'rgba(20,24,31,0.14)';
   ctx.beginPath(); ctx.ellipse(x + 12, y + 16, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
 }
+// mm:ss for the run-time stat.
+function fmtTime(s) {
+  const t = Math.max(0, Math.round(s || 0));
+  return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
+}
+// The finite structure, at a glance: 10 segments, boss loops 5 and 10
+// marked with a gold outline, cleared loops filled gold, the current loop
+// cyan (crimson on the lose screen, where it is the loop that killed you),
+// future loops dark. `filled` counts gold segments; `current` is 1-based,
+// 0 hides the highlight (win screen: everything filled). `onDark` draws
+// the unreached segments light, for the summary panel.
+function drawLoopTrack(ctx, cx, y, segW, segH, filled, current, died, onDark) {
+  const gap = 4, total = 10 * segW + 9 * gap, x0 = cx - total / 2;
+  for (let i = 1; i <= 10; i++) {
+    const x = x0 + (i - 1) * (segW + gap);
+    const boss = i === 5 || i === 10;
+    const h = boss ? segH + 4 : segH;
+    const yy = y - (boss ? 2 : 0);
+    if (i <= filled) {
+      ctx.fillStyle = COLOURS.gold;
+      ctx.fillRect(x, yy, segW, h);
+    } else if (i === current) {
+      ctx.fillStyle = died ? COLOURS.crimson : COLOURS.cyan;
+      ctx.fillRect(x, yy, segW, h);
+    } else {
+      ctx.fillStyle = onDark ? 'rgba(255,255,255,0.20)' : 'rgba(22,28,37,0.45)';
+      ctx.fillRect(x, yy, segW, h);
+    }
+    if (boss) {
+      ctx.strokeStyle = COLOURS.gold; ctx.lineWidth = 2;
+      ctx.strokeRect(x - 1, yy - 1, segW + 2, h + 2);
+    }
+  }
+}
+// Who killed the player, in plain words. The killing blow is recorded in
+// damagePlayer; fall back to the most recent damager, then the loop's
+// boss, then a nameless line — a wrong killer is never shown.
+const KILLER_NAMES = {
+  guardian: 'an Aegis Guardian',
+  sniper: 'a Chrono Sniper',
+  bomber: 'a Rift Bomber',
+  chaser: 'a Chaser',
+  splitter: 'a Splitter',
+  phantom: 'a Stolen Echo',
+  warden: 'THE WARDEN',
+  chronarch: 'THE CHRONARCH',
+};
+function killerLine(state) {
+  const k = state.killerType || state.lastDamager;
+  if (k && KILLER_NAMES[k]) return 'Taken down by ' + KILLER_NAMES[k] + ' on Loop ' + state.loop + '.';
+  if (state.loop === 5) return 'Taken down by THE WARDEN on Loop 5.';
+  if (state.loop === 10) return 'Taken down by THE CHRONARCH on Loop 10.';
+  return 'Overwhelmed on Loop ' + state.loop + '.';
+}
 
 const ENEMY_LABELS = {
   guardian: ['🛡', 'AEGIS GUARDIAN', 'Shield front — backstab it'],
@@ -63,11 +117,20 @@ export function render(ctx, state, input) {
   if (state.screen === 'rewind') drawRewindFX(ctx, state);
   // The banner lives on the playfield only: on draft/summary it would sit
   // on top of the cards and the final score (seen in staged screenshots).
-  if (state.banner && (state.screen === 'play' || state.screen === 'rewind')) drawBanner(ctx, state);
+  // The banner never draws under the pause overlay: the two texts collided
+  // (PAUSED over LOOP 1 — CLEAR THE ARENA). The banner is transient anyway.
+  if (state.banner && !state.paused && (state.screen === 'play' || state.screen === 'rewind')) drawBanner(ctx, state);
   if (state.paused) {
     ctx.fillStyle = 'rgba(20,24,31,0.6)'; ctx.fillRect(0, 0, W, H);
-    text(ctx, 'PAUSED', 640, 340, 'bold 54px system-ui, sans-serif', '#FFFFFF', 'center');
-    text(ctx, 'P — resume · M — mute', 640, 395, '18px system-ui, sans-serif', '#C9C2B2', 'center');
+    text(ctx, 'PAUSED', 640, 320, 'bold 54px system-ui, sans-serif', '#FFFFFF', 'center');
+    text(ctx, 'P — resume  ·  R — restart  ·  M — mute', 640, 375, '18px system-ui, sans-serif', '#C9C2B2', 'center');
+    // Clickable RESTART: same restart path as the R key (fresh Loop 1 run).
+    ctx.fillStyle = COLOURS.crimson;
+    rr(ctx, 540, 410, 200, 52, 10); ctx.fill();
+    ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2;
+    rr(ctx, 540, 410, 200, 52, 10); ctx.stroke();
+    text(ctx, '↻  RESTART  (R)', 640, 437, 'bold 19px system-ui, sans-serif', '#FFFFFF', 'center');
+    input.clickRects.push({ kind: 'restart', x: 540, y: 410, w: 200, h: 52 });
   }
 }
 
@@ -382,6 +445,9 @@ function drawPlayHUD(ctx, state, input) {
     text(ctx, 'REWIND NOW  (Q)', cx, state.fray > 0 ? 174 : 150, 'bold 15px system-ui, sans-serif', COLOURS.gold, 'center');
     ctx.globalAlpha = 1;
   }
+  // LOOP-PROGRESS TRACK (Pass 3): 10 segments under the clock — boss loops
+  // 5 and 10 marked gold, cleared loops filled gold, the current loop cyan.
+  drawLoopTrack(ctx, cx, 106, 18, 10, clamp(state.loop - 1, 0, 10), state.loop, false, false);
   // Boss bar under the clock.
   if (state.boss && state.boss.hp > 0) {
     // Bar only: the boss's name is drawn under the boss itself.
@@ -638,11 +704,14 @@ function drawSummary(ctx, state, input) {
   ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.arc(640, 160, 62, 0, Math.PI * 2); ctx.stroke();
   text(ctx, g, 640, 164, 'bold 64px system-ui, sans-serif', state.win ? '#14181F' : '#FFFFFF', 'center');
-  text(ctx, state.win ? 'ALL 10 LOOPS CLEARED — THE CHRONARCH FALLS' : 'TIMELINE COLLAPSED', 640, 252, 'bold 26px system-ui, sans-serif', '#FFFFFF', 'center');
-  if (!state.win && state.loseReason) text(ctx, state.loseReason, 640, 284, '16px system-ui, sans-serif', '#C9C2B2', 'center');
+  // Lose screen: the loop that killed you, big — and the killer, named.
+  // Win screen keeps its banner line.
+  text(ctx, state.win ? 'ALL 10 LOOPS CLEARED — THE CHRONARCH FALLS' : 'FELL ON LOOP ' + state.loop,
+    640, 252, 'bold 26px system-ui, sans-serif', state.win ? '#FFFFFF' : COLOURS.crimsonSoft, 'center');
+  if (!state.win) text(ctx, killerLine(state), 640, 284, '16px system-ui, sans-serif', '#C9C2B2', 'center');
   text(ctx, 'FINAL SCORE  ' + state.score.toLocaleString('en-US'), 640, 322, 'bold 34px system-ui, sans-serif', COLOURS.gold, 'center');
   if (state.newBest) text(ctx, '★ NEW BEST ★', 640, 356, 'bold 18px system-ui, sans-serif', '#F5B81D', 'center');
-  // Stats row.
+  // Stats row — 8 columns now, including total RUN TIME (Pass 3).
   const acc = state.shotsFired ? Math.round((state.shotsHit / state.shotsFired) * 100) : 0;
   const stats = [
     ['LOOPS', Math.min(state.loop, 10) + ' / 10'],
@@ -652,28 +721,33 @@ function drawSummary(ctx, state, input) {
     ['SURGES', String(state.surges || 0)],
     ['SHIELD BREAKS', String(state.shieldBreaks)],
     ['REWINDS', String(state.rewinds)],
+    ['TIME', fmtTime(state.runTime)],
   ];
   stats.forEach((s, i) => {
-    const x = 316 + i * 108;
-    text(ctx, s[0], x, 396, 'bold 12px system-ui, sans-serif', '#C9C2B2', 'center');
-    text(ctx, s[1], x, 422, 'bold 20px system-ui, sans-serif', '#FFFFFF', 'center');
+    const x = 292 + i * 100;
+    text(ctx, s[0], x, 392, 'bold 11px system-ui, sans-serif', '#C9C2B2', 'center');
+    text(ctx, s[1], x, 418, 'bold 19px system-ui, sans-serif', '#FFFFFF', 'center');
   });
+  // LOOP-PROGRESS TRACK (Pass 3): win — all 10 filled gold; lose — filled
+  // up to the loop reached, the killing loop crimson, the rest unreached.
+  drawLoopTrack(ctx, 640, 448, 44, 12, state.win ? 10 : clamp(state.loop - 1, 0, 10),
+    state.win ? 0 : state.loop, !state.win, true);
   // Per-loop bar graph.
-  text(ctx, 'SCORE PER LOOP', 640, 462, 'bold 13px system-ui, sans-serif', '#C9C2B2', 'center');
+  text(ctx, 'SCORE PER LOOP', 640, 482, 'bold 13px system-ui, sans-serif', '#C9C2B2', 'center');
   const loops = state.perLoop.slice(0, 10);
   const maxS = Math.max(1, ...loops.map((l) => l.score));
   loops.forEach((l, i) => {
-    const x = 340 + i * 62, h = Math.max(4, (l.score / maxS) * 90);
+    const x = 340 + i * 62, h = Math.max(4, (l.score / maxS) * 70);
     ctx.fillStyle = l.loop === 10 ? COLOURS.gold : COLOURS.cyan;
-    ctx.fillRect(x, 560 - h, 40, h);
+    ctx.fillRect(x, 562 - h, 40, h);
     text(ctx, 'L' + l.loop, x + 20, 576, '11px system-ui, sans-serif', '#C9C2B2', 'center');
   });
   if (!loops.length) text(ctx, 'No loop cleared yet.', 640, 520, '14px system-ui, sans-serif', '#C9C2B2', 'center');
-  // PLAY AGAIN.
+  // PLAY AGAIN on a win, TRY AGAIN on a loss — same restart path (R).
   ctx.fillStyle = COLOURS.crimson;
   rr(ctx, 470, 600, 340, 52, 10); ctx.fill();
   ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2;
   rr(ctx, 470, 600, 340, 52, 10); ctx.stroke();
-  text(ctx, '↻  PLAY AGAIN  (R)', 640, 627, 'bold 20px system-ui, sans-serif', '#FFFFFF', 'center');
+  text(ctx, state.win ? '↻  PLAY AGAIN  (R)' : '↻  TRY AGAIN  (R)', 640, 627, 'bold 20px system-ui, sans-serif', '#FFFFFF', 'center');
   input.clickRects.push({ kind: 'restart', x: 470, y: 600, w: 340, h: 52 });
 }
