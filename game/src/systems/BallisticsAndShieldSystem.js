@@ -35,17 +35,27 @@ export function damageEnemy(state, enemy, dmg, from, hitX, hitY, fromEchoIdx) {
   }
   if (enemy.hp <= 0) return 'dead';
   // Directional shield: Guardians and the Warden block frontal shots.
-  if ((enemy.type === 'guardian' || enemy.type === 'warden') && enemy.shieldUp !== false) {
+  // The shield is a real state now: a backstab while it is up BREAKS it once
+  // (juice + stagger + 1.5x) and it stays down ~3s. While down, backstabs keep
+  // the 1.5x bonus but fire no juice — sustained fire no longer re-triggers
+  // slow-mo/hitstop on every hit (that was the lag-on-hit bug).
+  const shielded = enemy.type === 'guardian' || enemy.type === 'warden';
+  if (shielded && enemy.shieldUp !== false) {
     const fakeBolt = { x: hitX, y: hitY };
     if (isFrontal(enemy, fakeBolt)) {
       state.events.push({ type: 'shieldBlock', x: hitX, y: hitY });
       addFloat(state, hitX, hitY - 14, 'BLOCKED', '#7DF3FF');
       return 'blocked';
     }
-    // Backstab: the shield was up and the shot came from behind.
+    // Backstab while the shield is up: break it — ONCE per down-cycle.
     state.events.push({ type: 'shieldBreak', x: enemy.x, y: enemy.y });
     addFloat(state, enemy.x, enemy.y - 30, 'SHIELD BREAK!', '#F5B81D');
     enemy.staggerT = 0.9;
+    enemy.shieldUp = false;
+    enemy.shieldDownT = 3.0;
+    dmg *= 1.5;
+  } else if (shielded && !isFrontal(enemy, { x: hitX, y: hitY })) {
+    // Shield already down and the shot came from behind: backstab bonus, no juice.
     dmg *= 1.5;
   }
   // Crossfire: hit by player AND an echo within 1.5s.

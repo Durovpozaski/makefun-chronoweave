@@ -29,6 +29,7 @@ export function makeEnemy(state, type, x, y, elite) {
     speed: base.speed * (elite ? 1.25 : 1),
     facing: Math.PI / 2, angle: Math.PI / 2,
     elite: !!elite, staggerT: 0, flashT: 0, shieldAngle: Math.PI / 2,
+    shieldUp: true, shieldDownT: 0,
     contactCd: 0, teleT: 0, teleState: 0, teleAngle: 0, fireCd: 1 + state.rng() * 1.5,
     waveT: 0, summoned: false, phase: 1, stoleEchoes: false, splitSpawned: false,
     lastPlayerHit: 0, lastEchoHit: 0, crossUsed: 0,
@@ -132,6 +133,12 @@ export function updateEnemies(state, dt) {
     }
     e.flashT = Math.max(0, e.flashT - dt);
     e.contactCd = Math.max(0, e.contactCd - dt);
+    // A broken shield re-raises after ~3s. Ticks even while staggered so the
+    // down-window is real wall-clock time, not stretched by the stagger.
+    if (e.shieldDownT > 0) {
+      e.shieldDownT -= dt;
+      if (e.shieldDownT <= 0) { e.shieldUp = true; e.shieldDownT = 0; }
+    }
     if (e.staggerT > 0) { e.staggerT -= dt; continue; }
     if (frozen) continue;
     e.distractT = Math.max(0, e.distractT - dt);

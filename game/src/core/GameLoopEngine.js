@@ -250,7 +250,7 @@ function drainEvents(state, audio) {
       case 'shoot': audio.sfx('shoot'); break;
       case 'echoShoot': audio.sfx('echoShoot'); break;
       case 'shieldBlock': state.shieldBlocks++; audio.sfx('block'); break;
-      case 'shieldBreak': state.shieldBreaks++; state.slowmoT = 0.35; state.hitstopT = 0.09; audio.sfx('shieldBreak'); break;
+      case 'shieldBreak': state.shieldBreaks++; state.slowmoT = Math.max(state.slowmoT, 0.18); state.hitstopT = Math.max(state.hitstopT, 0.045); audio.sfx('shieldBreak'); break;
       case 'crossfire': audio.sfx('crossfire'); break;
       case 'kill': state.slowmoT = Math.max(state.slowmoT, 0.12); audio.sfx('kill'); break;
       case 'dash': audio.sfx('dash'); break;

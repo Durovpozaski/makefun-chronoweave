@@ -208,11 +208,13 @@ function drawEnemies(ctx, state) {
         ctx.fillStyle = COLOURS.crimson;
         ctx.beginPath(); ctx.arc(e.x, e.y, 5, 0, Math.PI * 2); ctx.fill();
       }
-      // Shield arc on the facing side (120 deg).
-      ctx.strokeStyle = e.type === 'chronarch' ? COLOURS.gold : '#9ADFE8';
-      ctx.lineWidth = e.type === 'guardian' ? 6 : 9;
-      const sh = e.shieldAngle !== undefined ? e.shieldAngle : e.facing;
-      ctx.beginPath(); ctx.arc(e.x, e.y, R + 8, sh - Math.PI / 3, sh + Math.PI / 3); ctx.stroke();
+      // Shield arc on the facing side (120 deg) — hidden while broken.
+      if (e.shieldUp !== false) {
+        ctx.strokeStyle = e.type === 'chronarch' ? COLOURS.gold : '#9ADFE8';
+        ctx.lineWidth = e.type === 'guardian' ? 6 : 9;
+        const sh = e.shieldAngle !== undefined ? e.shieldAngle : e.facing;
+        ctx.beginPath(); ctx.arc(e.x, e.y, R + 8, sh - Math.PI / 3, sh + Math.PI / 3); ctx.stroke();
+      }
       // Eye.
       ctx.fillStyle = COLOURS.guardianEye;
       ctx.beginPath(); ctx.arc(e.x + Math.cos(e.facing) * R * 0.4, e.y + Math.sin(e.facing) * R * 0.4, e.type === 'guardian' ? 4 : 7, 0, Math.PI * 2); ctx.fill();
