@@ -1,9 +1,9 @@
 {
   "shots": [
-    { "file": "1-cover.jpg", "preset": "cover", "note": "Loop 10 boss fight: Chronarch + 2 echoes in crossfire, HUD complete" },
-    { "file": "2-title.jpg", "preset": "title", "note": "Title screen with attract-mode battle behind it" },
-    { "file": "3-upgrade.jpg", "preset": "upgrade", "note": "Paradox Draft pick-1-of-3 after Loop 5" },
-    { "file": "4-win.jpg", "preset": "win", "note": "Win screen: S grade, FINAL SCORE 15,840, NEW BEST, per-loop graph" }
+    { "file": "1-cover.jpg", "preset": "cover", "note": "Loop 10 boss fight: Chronarch at 60% HP + Splitter, 5/6 relics, HUD complete" },
+    { "file": "2-title.jpg", "preset": "title", "note": "Title screen with attract-mode battle behind it; counts include 6 RELICS" },
+    { "file": "3-upgrade.jpg", "preset": "upgrade", "note": "Paradox Draft pick-1-of-3 after real Loop 5 clear: owned upgrades + relics earned" },
+    { "file": "4-win.jpg", "preset": "win", "note": "Win screen: S grade, FINAL SCORE 31,558, NEW BEST, 6/6 relics, per-loop graph" }
   ],
-  "best": 15840
+  "best": 31558
 }

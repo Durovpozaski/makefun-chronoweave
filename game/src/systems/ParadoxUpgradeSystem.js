@@ -59,7 +59,8 @@ export function applyUpgrade(state, id) {
   if (!state.upgradesOwned.includes(id)) state.upgradesOwned.push(id);
   state.upgradeValues = upgradeValues(state.upgradeLevels);
   if (id === 'vital') {
-    state.player.maxHp = state.upgradeValues.maxHp;
+    // PASS 7 — a Warden's Seal bonus survives a later Vital Loop pick.
+    state.player.maxHp = state.upgradeValues.maxHp + (state.relicHpBonus || 0);
     state.player.hp = Math.min(state.upgradeValues.maxHp, state.player.hp + 25);
   }
   state.events.push({ type: 'upgrade', x: state.player.x, y: state.player.y, id });

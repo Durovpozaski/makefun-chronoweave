@@ -7,6 +7,7 @@
 import { W, H, ARENA, COLOURS, MAX_LOOPS, DIFFICULTY_ORDER, DIFFICULTIES, clamp } from '../config.js';
 import { echoSlots } from '../core/GameLoopEngine.js';
 import { UPGRADES } from '../systems/ParadoxUpgradeSystem.js';
+import { RELICS } from '../systems/ParadoxRelicSystem.js';
 
 function rr(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -567,6 +568,10 @@ function drawPlayHUD(ctx, state, input) {
   }
   // UPGRADES chip (Pass 4): owned / 8, in the right-hand systems stack.
   text(ctx, 'UPGRADES  ' + state.upgradesOwned.length + '/' + UPGRADES.length, 1256, 230, 'bold 14px system-ui, sans-serif', '#14181F', 'right');
+  // PASS 7 — RELICS chip: feats earned this run, owned / 6. Live play
+  // only: in cover mode the dedicated RELICS panel shows them, and the
+  // OWNED UPGRADES panel would paint over this chip.
+  if (!state.coverMode) text(ctx, 'RELICS  ' + (state.relics || []).length + '/' + RELICS.length, 1256, 254, 'bold 14px system-ui, sans-serif', '#14181F', 'right');
   // PASS 6 — cover-only density panels. Both read live state, so the lists
   // always match the staged wave and the owned upgrades exactly: the enemy
   // list counts state.enemies by type, the owned list names
@@ -596,6 +601,23 @@ function drawPlayHUD(ctx, state, input) {
       text(ctx, n, 1242, 280 + i * 20, 'bold 13px system-ui, sans-serif', '#FFFFFF', 'right');
     });
     if (ownedNames.length > 3) text(ctx, '… +' + (ownedNames.length - 3) + ' more', 1242, 280 + shown.length * 20, '12px system-ui, sans-serif', '#C9C2B2', 'right');
+    // PASS 7 — cover-only RELICS panel: the feats this run has earned.
+    // It sits under the FOES panel, same dark card, same left edge.
+    const relicRows = (state.relics || []).map((id) => {
+      const r = RELICS.find((o) => o.id === id);
+      return r ? r.icon + '  ' + r.name : id.toUpperCase();
+    });
+    const foeH = 26 + eRows.length * 20;
+    ctx.fillStyle = 'rgba(22,28,37,0.78)';
+    rr(ctx, 24, 150 + foeH + 14, 246, 26 + Math.max(relicRows.length, 1) * 20, 8); ctx.fill();
+    text(ctx, 'PARADOX RELICS  ' + relicRows.length + '/' + RELICS.length, 38, 150 + foeH + 28, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'left');
+    if (relicRows.length) {
+      relicRows.forEach((n, i) => {
+        text(ctx, n, 38, 150 + foeH + 50 + i * 20, 'bold 13px system-ui, sans-serif', '#FFFFFF', 'left');
+      });
+    } else {
+      text(ctx, 'none earned yet', 38, 150 + foeH + 50, '13px system-ui, sans-serif', '#C9C2B2', 'left');
+    }
   }
   // HP bar, bottom-left.
   ctx.fillStyle = 'rgba(22,28,37,0.8)';
@@ -672,7 +694,7 @@ function drawTitle(ctx, state, input) {
   text(ctx, 'YOUR PAST SELF FIGHTS BESIDE YOU.', 640, 134, 'bold 27px system-ui, sans-serif', COLOURS.gold, 'center');
   text(ctx, 'Rewind to multiply. Crossfire to charge the Weave.', 640, 160, 'italic 17px system-ui, sans-serif', '#7DF3FF', 'center');
   // PASS 6 — counts line: the run's scale in one glance.
-  text(ctx, '10 LOOPS  ·  2 BOSSES  ·  8 UPGRADES  ·  5 FOES  ·  ECHOES  ·  REWIND', 640, 178, 'bold 15px system-ui, sans-serif', COLOURS.gold, 'center');
+  text(ctx, '10 LOOPS  ·  2 BOSSES  ·  8 UPGRADES  ·  6 RELICS  ·  5 FOES  ·  ECHOES  ·  REWIND', 640, 178, 'bold 15px system-ui, sans-serif', COLOURS.gold, 'center');
   // 3-panel diagram: FIGHT → REWIND → ECHO REPLAYS.
   const panels = [
     { n: '1', title: 'FIGHT 10s', sub: 'WASD move · mouse aim · click shoot', col: COLOURS.crimson },
@@ -797,7 +819,12 @@ function drawDraft(ctx, state, input) {
     const u = UPGRADES.find((o) => o.id === id);
     return u ? u.name : id.toUpperCase();
   }).join('  ·  ') : 'none yet';
-  text(ctx, 'OWNED:  ' + owned, 640, 516, '15px system-ui, sans-serif', '#C9C2B2', 'center');
+  text(ctx, 'OWNED:  ' + owned, 640, 510, '15px system-ui, sans-serif', '#C9C2B2', 'center');
+  // PASS 7 — the relics this run has earned, with their effects visible.
+  const relicLine = (state.relics || []).length
+    ? (state.relics || []).map((id) => { const r = RELICS.find((o) => o.id === id); return r ? r.icon + ' ' + r.name : id.toUpperCase(); }).join('  ·  ')
+    : 'none earned yet';
+  text(ctx, 'RELICS ' + (state.relics || []).length + '/6:  ' + relicLine, 640, 534, 'bold 14px system-ui, sans-serif', COLOURS.gold, 'center');
   // NEXT-LOOP PREVIEW (Pass 2): finishRewind already spawned the next wave
   // before showing the draft, so counting state.enemies IS the exact
   // composition the player is about to face — no separate estimate to drift.
@@ -814,13 +841,13 @@ function drawDraft(ctx, state, input) {
     first = false;
   }
   if (first) prev += '— arena clear —';
-  text(ctx, prev, 640, 548, 'bold 16px system-ui, sans-serif', COLOURS.cyan, 'center');
-  text(ctx, 'ECHOES ' + state.echoes.length + '/' + echoSlots(state), 640, 576, 'bold 14px system-ui, sans-serif', '#C9C2B2', 'center');
+  text(ctx, prev, 640, 558, 'bold 16px system-ui, sans-serif', COLOURS.cyan, 'center');
+  text(ctx, 'ECHOES ' + state.echoes.length + '/' + echoSlots(state), 640, 582, 'bold 14px system-ui, sans-serif', '#C9C2B2', 'center');
   // PASS 6 — loop-map strip: the 10-loop road at a glance (display only —
   // no road choice, no new system). Boss loops 5 and 10 are gold-outlined,
   // cleared loops gold, the loop you are about to play cyan.
-  text(ctx, 'LOOP MAP — YOU ARE HEADING INTO LOOP ' + state.loop, 640, 602, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'center');
-  drawLoopTrack(ctx, 640, 622, 30, 12, clamp(state.loop - 1, 0, 10), state.loop, false, true);
+  text(ctx, 'LOOP MAP — YOU ARE HEADING INTO LOOP ' + state.loop, 640, 606, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'center');
+  drawLoopTrack(ctx, 640, 626, 30, 12, clamp(state.loop - 1, 0, 10), state.loop, false, true);
 }
 
 // ---- Summary ----
@@ -836,8 +863,8 @@ function drawSummary(ctx, state, input) {
   // layout (already verified and viewed) — only the buttons move, and the
   // old PLAY AGAIN click point (640,626) still lands inside the button.
   const L = state.win
-    ? { cy: 150, banner: 238, score: 304, best: 334, statL: 366, statV: 392, track: 490, graphL: 518, graphTop: 568, graphH: 40, graphLab: 580 }
-    : { cy: 160, banner: 252, score: 322, best: 356, statL: 392, statV: 418, track: 448, graphL: 482, graphTop: 562, graphH: 70, graphLab: 576 };
+    ? { cy: 150, banner: 238, score: 304, best: 334, statL: 366, statV: 392, track: 502, graphL: 528, graphTop: 574, graphH: 34, graphLab: 586 }
+    : { cy: 160, banner: 252, score: 322, best: 356, statL: 392, statV: 418, track: 458, graphL: 490, graphTop: 566, graphH: 64, graphLab: 580 };
   // Grade circle.
   const g = state.win ? (state.winGrade || 'B') : '—';
   ctx.fillStyle = state.win ? COLOURS.gold : '#3A4454';
@@ -872,13 +899,23 @@ function drawSummary(ctx, state, input) {
   // ACHIEVEMENTS (Pass 4, win only): 6 items from the run's own stats —
   // earned gold, unearned grey — in two rows of three.
   if (state.win) {
-    text(ctx, 'ACHIEVEMENTS', 640, 418, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'center');
+    text(ctx, 'ACHIEVEMENTS', 640, 412, 'bold 13px system-ui, sans-serif', COLOURS.gold, 'center');
     achievementsFor(state).forEach((a, i) => {
       const x = 370 + (i % 3) * 270;
-      const y = 440 + Math.floor(i / 3) * 22;
+      const y = 432 + Math.floor(i / 3) * 20;
       text(ctx, (a.earned ? '★ ' : '☆ ') + a.name + ' — ' + a.desc, x, y, '13px system-ui, sans-serif', a.earned ? '#F5B81D' : '#7A7F88', 'center');
     });
   }
+  // PASS 7 — the relics this run earned, named. A win shows all six;
+  // a loss shows what the run managed before it fell.
+  const sumRelics = (state.relics || []).map((id) => {
+    const r = RELICS.find((o) => o.id === id);
+    return r ? r.icon + ' ' + r.name : id.toUpperCase();
+  });
+  const relY = state.win ? 464 : 428;
+  text(ctx, 'PARADOX RELICS  ' + sumRelics.length + '/6', 640, relY, 'bold 13px system-ui, sans-serif', sumRelics.length ? COLOURS.gold : '#7A7F88', 'center');
+  text(ctx, sumRelics.length ? sumRelics.join('  ·  ') : 'none earned yet',
+    640, relY + 18, '11px system-ui, sans-serif', sumRelics.length ? '#F5B81D' : '#7A7F88', 'center');
   // LOOP-PROGRESS TRACK (Pass 3): win — all 10 filled gold; lose — filled
   // up to the loop reached, the killing loop crimson, the rest unreached.
   drawLoopTrack(ctx, 640, L.track, 44, 12, state.win ? 10 : clamp(state.loop - 1, 0, 10),

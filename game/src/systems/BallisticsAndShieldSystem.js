@@ -5,6 +5,7 @@
 // attention from the front while the live player backstabs it — a backstab
 // triggers SHIELD BREAK (stagger + 1.5x damage).
 import { ARENA, PLAYER, WEAVE_PER_CROSSFIRE, WEAVE_MAX, angleDiff, clamp, dist, segmentHitsRect } from '../config.js';
+import { relicShieldBreakBonus, relicWeaveMult, relicAllDamageMult } from './ParadoxRelicSystem.js';
 
 export function fireBolt(state, shooter, angle, opts) {
   const o = opts || {};
@@ -54,6 +55,8 @@ export function damageEnemy(state, enemy, dmg, from, hitX, hitY, fromEchoIdx) {
     enemy.shieldUp = false;
     enemy.shieldDownT = 3.0;
     dmg *= 1.5;
+    // PASS 7 — SHATTERED HOURGLASS: a broken shield shatters harder.
+    dmg += relicShieldBreakBonus(state);
   } else if (shielded && !isFrontal(enemy, { x: hitX, y: hitY })) {
     // Shield already down and the shot came from behind: backstab bonus, no juice.
     dmg *= 1.5;
@@ -75,10 +78,12 @@ export function damageEnemy(state, enemy, dmg, from, hitX, hitY, fromEchoIdx) {
     state.crossfires++;
     // WEAVE: every crossfire charges the meter — 3 crossfires fill it, and
     // a rewind spent at full Weave becomes a PARADOX SURGE (+1 echo slot).
-    state.weave = Math.min(WEAVE_MAX, (state.weave || 0) + WEAVE_PER_CROSSFIRE);
+    state.weave = Math.min(WEAVE_MAX, (state.weave || 0) + WEAVE_PER_CROSSFIRE * relicWeaveMult(state));
     state.events.push({ type: 'crossfire', x: enemy.x, y: enemy.y });
     addFloat(state, enemy.x, enemy.y - 48, 'CROSSFIRE x' + state.upgradeValues.crossfireMult, '#00E5FF');
   }
+  // PASS 7 — CHRONARCH'S CROWN: every hit lands 10% harder.
+  dmg *= relicAllDamageMult(state);
   enemy.hp -= dmg;
   enemy.flashT = 0.12;
   addFloat(state, hitX, hitY - 10, '-' + Math.round(dmg), cross ? '#00E5FF' : '#FFFFFF');
@@ -100,10 +105,10 @@ export function killEnemy(state, enemy, from) {
   // Only THE CHRONARCH ends the run; THE WARDEN (Loop 5) is a mid-boss.
   if (enemy.type === 'chronarch') {
     state.bossDefeated = true;
-    state.events.push({ type: 'bossDown', x: enemy.x, y: enemy.y });
+    state.events.push({ type: 'bossDown', kind: 'chronarch', x: enemy.x, y: enemy.y });
   }
   if (enemy.type === 'warden') {
-    state.events.push({ type: 'bossDown', x: enemy.x, y: enemy.y });
+    state.events.push({ type: 'bossDown', kind: 'warden', x: enemy.x, y: enemy.y });
   }
 }
 

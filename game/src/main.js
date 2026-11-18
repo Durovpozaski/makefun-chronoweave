@@ -8,6 +8,7 @@ import { newRun, startRun, step, setBotDriver, goTitle, recordRun, SPAWN } from 
 import { render, winLoseBanner, achievementsFor } from './ui/DiegeticHUDRenderer.js';
 import { SynthAudioEngine } from './audio/SynthAudioEngine.js';
 import { rollOffers, applyUpgrade, upgradeValues } from './systems/ParadoxUpgradeSystem.js';
+import { RELICS, grantRelic } from './systems/ParadoxRelicSystem.js';
 import { createEcho } from './systems/TimelineRecorderSystem.js';
 import { layoutPillars, spawnWave, makeEnemy } from './systems/ArenaDirector.js';
 
@@ -128,6 +129,9 @@ window.__chronoweave = {
   // can drive the sim deterministically via step(). Does NOT show PAUSED.
   setLivePaused(on) { state.livePaused = !!on; },
   applyUpgrade(id) { return applyUpgrade(state, id); },
+  // PASS 7: relic staging / verification surface.
+  grantRelic(id) { return grantRelic(state, id); },
+  relics() { return (state.relics || []).slice(); },
   upgradeValues() { return { ...state.upgradeValues }; },
   forceLoop(i) {
     state.loop = i;
@@ -180,34 +184,39 @@ window.__chronoweave = {
     state.screen = 'draft';
   },
   forceWin() {
-    // PASS 6 staged win: the best real bot run, seed 1, measured live
-    // (step(60) batches, twice, identical): score 25,977, 93 kills,
-    // 24 crossfires, 27 shield breaks, 9 rewinds, 5 surges, 320 shots /
-    // 188 hits (59%), 75.3s, hp 125/150, 4 max echoes. The per-loop
-    // rows are the run's real loops 1-9; loop 10 is the remainder
-    // (25,977 - 21,460 = 4,517, 13 kills), so the bars sum to the final
-    // score and the kills sum to 93. SAME BEST as every other staged
-    // shot, so BEST is identical on all four screenshots.
+    // PASS 7 staged win: the best real bot run OF THIS BUILD, seed 7,
+    // measured live (step(60) batches, seed sweep 1-10): score 31,558,
+    // 99 kills, 9 crossfires, 27 shield breaks, 10 rewinds, 2 surges,
+    // 437 shots / 159 hits (36%), 79.2s, hp 160/165, 4 max echoes,
+    // 6/6 relics. The per-loop rows are the run's real rows, exactly as
+    // the live game records them: they are loop kill-scores, so — as in
+    // any real win — they do not sum to the final score (loop-clear and
+    // win bonuses land in the total, not in a row). SAME BEST as every
+    // other staged shot, so BEST is identical on all four screenshots.
     state.loop = 10;
-    state.score = 25977;
-    state.best = 25977;
+    state.score = 31558;
+    state.best = 31558;
     state.perLoop = [
-      { loop: 1, kills: 1, score: 100, time: 6.5 },
-      { loop: 2, kills: 2, score: 250, time: 6.5 },
-      { loop: 3, kills: 7, score: 1030, time: 6.5 },
-      { loop: 4, kills: 10, score: 1830, time: 6.5 },
-      { loop: 5, kills: 4, score: 630, time: 6.5 },
-      { loop: 6, kills: 10, score: 2110, time: 3.9 },
-      { loop: 7, kills: 14, score: 5530, time: 4.5 },
-      { loop: 8, kills: 19, score: 8210, time: 6 },
-      { loop: 9, kills: 13, score: 1770, time: 7.3 },
-      { loop: 10, kills: 13, score: 4517, time: 9.9 },
+      { loop: 1, kills: 2, score: 210, time: 6.5 },
+      { loop: 2, kills: 6, score: 720, time: 5.8 },
+      { loop: 3, kills: 5, score: 890, time: 6.5 },
+      { loop: 4, kills: 10, score: 1450, time: 6.2 },
+      { loop: 5, kills: 0, score: 0, time: 6.5 },
+      { loop: 6, kills: 11, score: 1630, time: 6.5 },
+      { loop: 7, kills: 15, score: 4550, time: 5 },
+      { loop: 8, kills: 19, score: 9060, time: 4.7 },
+      { loop: 9, kills: 17, score: 8500, time: 6.5 },
+      { loop: 10, kills: 7, score: 930, time: 6.5 },
     ];
-    state.kills = 93; state.crossfires = 24; state.shieldBreaks = 27; state.rewinds = 9; state.surges = 5;
-    state.shotsFired = 320; state.shotsHit = 188;
-    state.runTime = 75.3;
+    state.kills = 99; state.crossfires = 9; state.shieldBreaks = 27; state.rewinds = 10; state.surges = 2;
+    // PASS 7: a real winning run earns all six relics — the crown on the
+    // Chronarch kill, the seal on the Warden, the rest on feats along the
+    // way — so the staged win shows RELICS 6/6.
+    state.relics = RELICS.map((r) => r.id);
+    state.shotsFired = 437; state.shotsHit = 159;
+    state.runTime = 79.2;
     state.maxEchoes = 4;
-    state.player.hp = 125; state.player.maxHp = 150;
+    state.player.hp = 160; state.player.maxHp = 165;
     state.win = true; state.winGrade = 'S'; state.newBest = true;
     state.screen = 'summary';
     // The staged win bypasses toSummary, so record the run here — the
@@ -223,14 +232,14 @@ function applyShotPreset() {
   if (!shot) return;
   state.bot = false;
   if (shot === 'cover') {
-    window.__chronoweave.setBest(25977);
+    window.__chronoweave.setBest(31558);
     startRun(state, 'steady', Number(q.get('seed') || 7));
     window.__chronoweave.forceLoop(10);
     state.score = 12400; state.combo = 24; state.comboT = 2;
     state.chainShown = 3; state.chainT = 0.9; // staged CHAIN x3 callout: combo 24 genuinely reaches x3
     state.bot = true;
   } else if (shot === 'upgrade') {
-    window.__chronoweave.setBest(25977);
+    window.__chronoweave.setBest(31558);
     startRun(state, 'steady', 7);
     // Stage a real Loop 6 draft: forceLoop spawns the Loop 6 wave first, so
     // the NEXT-LOOP preview on the draft screen counts the actual wave.
@@ -238,7 +247,7 @@ function applyShotPreset() {
     state.score = 8300;
     window.__chronoweave.forceDraft();
   } else if (shot === 'win') {
-    window.__chronoweave.setBest(25977);
+    window.__chronoweave.setBest(31558);
     startRun(state, 'steady', 7);
     window.__chronoweave.forceWin();
   }

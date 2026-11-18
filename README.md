@@ -4,7 +4,7 @@
 [![make.fun rank](https://make.fun/badge/best-game-01/Durovpozaski/makefun-chronoweave/rank.svg)](https://make.fun/bounty/best-game-01)
 [![make.fun reward](https://make.fun/badge/best-game-01/reward.svg)](https://make.fun/bounty/best-game-01)
 
-**CHRONOWEAVE: rewind every 10 seconds and fight beside your own ghost, turning each past run into crossfire: 10 loops, 2 bosses, 8 upgrades, echoes, rewind**
+**CHRONOWEAVE: rewind every 10 seconds and fight beside your own ghost, turning each past run into crossfire: 10 loops, bosses Warden and Chronarch, 8 upgrades, 6 relics, echoes, rewind**
 
 ## The game
 
@@ -15,6 +15,7 @@ Every 10 seconds, rewind — and fight beside your own ghost.
 - **ECHO REPLAYS IT** — up to 3 echoes fight beside you. Aegis Guardians block shots from the front: let an echo draw their shield, then backstab them for a SHIELD BREAK.
 - **10 loops, 2 bosses** — THE WARDEN on Loop 5, THE CHRONARCH on Loop 10 (3 phases; its final phase steals your echoes and turns them against you).
 - **Pick 1 of 3 upgrades** after every cleared loop: Triple Echo, Temporal Ricochet, Phase Dash, Stasis Grenade, Rapid Coil, Vital Loop, Echo Damage, Crossfire Amp.
+- **6 Paradox Relics** — earned by feats, kept for the run: ECHO LENS (first crossfire), SHATTERED HOURGLASS (first shield break), FRAYED THREAD (first rewind), WARDEN'S SEAL (beat THE WARDEN), ECHO HEART (3 echoes at once), CHRONARCH'S CROWN (beat THE CHRONARCH).
 - Enemies: Aegis Guardian, Chrono Sniper, Rift Bomber, Chaser, Splitter — plus stolen-echo Phantoms.
 
 Win by beating THE CHRONARCH on Loop 10. Lose when your HP reaches 0.

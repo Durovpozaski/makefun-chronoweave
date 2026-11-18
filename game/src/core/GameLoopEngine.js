@@ -10,6 +10,7 @@ import { createRecorder, recordFrame, createEcho, echoFrame } from '../systems/T
 import { fireBolt, updateBolts, updateShockwaves, updateRifts, addFloat, spawnSparks, comboMult } from '../systems/BallisticsAndShieldSystem.js';
 import { layoutPillars, spawnWave, updateEnemies, waveCleared } from '../systems/ArenaDirector.js';
 import { rollOffers, applyUpgrade, upgradeValues } from '../systems/ParadoxUpgradeSystem.js';
+import { grantRelic, checkRelics, hasRelic, relicEchoDamageMult } from '../systems/ParadoxRelicSystem.js';
 
 export const SPAWN = { x: 640, y: 600 };
 
@@ -46,6 +47,9 @@ export function newRun(difficulty, seed) {
     echoes: [],
     enemies: [], bolts: [], particles: [], floats: [], rifts: [], shockwaves: [],
     pillars: [], upgradesOwned: [], upgradeLevels: {},
+    // PASS 7 — Paradox Relics: feats earned mid-run (see ParadoxRelicSystem).
+    // relicHpBonus survives Vital Loop re-derives of maxHp.
+    relics: [], relicHpBonus: 0,
     upgradeValues: upgradeValues({}),
     pendingOffers: [], draftKind: 'clear', recording: [], recorder: createRecorder(),
     rewindT: 0, rewindKind: 'timeout', deathT: 0,
@@ -143,7 +147,7 @@ function tryFire(state, ent, inp, from, echoIdx) {
   fireBolt(state, ent, ent.angle, {
     from,
     echoIdx: isEcho ? echoIdx : -1,
-    dmg: isEcho ? state.upgradeValues.echoDamage : PLAYER.boltDamage,
+    dmg: isEcho ? state.upgradeValues.echoDamage * relicEchoDamageMult(state) : PLAYER.boltDamage,
     ricochet: state.upgradeValues.ricochet && !isEcho,
     speed: PLAYER.boltSpeed,
   });
@@ -156,6 +160,11 @@ function startRewind(state, kind) {
   state.rewindKind = kind;
   state.rewindT = 1.25;
   state.rewinds++;
+  // PASS 7 — FRAYED THREAD: a rewind stitches the timeline back together.
+  if (hasRelic(state, 'thread')) {
+    state.player.hp = Math.min(state.player.maxHp, state.player.hp + 10);
+    addFloat(state, state.player.x, state.player.y - 28, '+10 HP', '#00E5FF');
+  }
   // PARADOX SURGE: a rewind spent at full Weave burns the meter for +1 echo
   // slot on the upcoming loop (bonus caps at +2, so slots cap at 4 total).
   if (state.weave >= WEAVE_MAX) {
@@ -353,6 +362,12 @@ function drainEvents(state, audio) {
       case 'shieldBlock': state.shieldBlocks++; audio.sfx('block'); break;
       case 'shieldBreak': state.shieldBreaks++; state.slowmoT = Math.max(state.slowmoT, 0.08); audio.sfx('shieldBreak'); break;
       case 'crossfire': audio.sfx('crossfire'); break;
+      case 'bossDown':
+        // PASS 7 — boss relics are granted from the kill itself.
+        if (ev.kind === 'warden') grantRelic(state, 'seal');
+        if (ev.kind === 'chronarch') grantRelic(state, 'crown');
+        break;
+      case 'relic': audio.sfx('upgrade'); break;
       case 'surge': audio.sfx('upgrade'); break;
       case 'bossPhase': audio.sfx('upgrade'); break;
       case 'summonWarn': audio.sfx('sniperTele'); break;
@@ -471,6 +486,7 @@ export function step(state, input, audio, dt) {
     }
     updateFx(state, dt);
     drainEvents(state, audio);
+    checkRelics(state);
     input.clearEdges();
     return;
   }
@@ -479,6 +495,7 @@ export function step(state, input, audio, dt) {
     state.rewindT -= dt;
     updateFx(state, dt);
     drainEvents(state, audio);
+    checkRelics(state);
     if (state.rewindT <= 0) finishRewind(state);
     input.clearEdges();
     return;
