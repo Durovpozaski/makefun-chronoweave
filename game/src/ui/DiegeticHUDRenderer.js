@@ -547,7 +547,12 @@ function drawPlayHUD(ctx, state, input) {
   for (let i = 0; i < slotsN; i++) slots += i < state.echoes.length ? '▮' : '▯';
   text(ctx, slots + '   ' + state.echoes.length + '/' + slotsN, 1256, 146, 'bold 14px system-ui, sans-serif', '#14181F', 'right');
   const cm = (1 + state.combo * 0.1).toFixed(1);
-  text(ctx, 'COMBO  ×' + cm + (state.combo > 0 ? '  (' + state.combo + ' hits)' : ''), 1256, 170, 'bold 15px system-ui, sans-serif', state.combo >= 10 ? COLOURS.crimson : '#14181F', 'right');
+  // TINY FIX (cover): the crimson combo line ends at x=1256, hard against the
+  // vignette's dark edge band, so the thin ')' read as clipped at judge size.
+  // In cover mode only, anchor it 24px further in (x=1232) for a clear margin;
+  // live play keeps the 1256 anchor and the full '(N hits)' text.
+  const comboX = state.coverMode ? 1232 : 1256;
+  text(ctx, 'COMBO  ×' + cm + (state.combo > 0 ? '  (' + state.combo + ' hits)' : ''), comboX, 170, 'bold 15px system-ui, sans-serif', state.combo >= 10 ? COLOURS.crimson : '#14181F', 'right');
   // WEAVE meter: crossfires charge it (3 fill it). At 100 the next rewind
   // is a PARADOX SURGE — +1 echo slot. The label flashes gold when ready.
   const wv = clamp(state.weave || 0, 0, 100);
