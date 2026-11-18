@@ -194,12 +194,17 @@ export function damagePlayer(state, dmg, sx, sy, srcType) {
   const p = state.player;
   if (!p.alive || p.invulnT > 0 || p.dashT > 0) return;
   if (srcType) state.lastDamager = srcType;
-  p.hp -= dmg * state.diff.dmgMul;
+  // LATE-GAME COUNTERWEIGHT (Pass 5): from loop 7 on, enemy hits bite 20%
+  // harder. Loops 1-6 are untouched, so the early game and the hook play
+  // exactly as before; only the endgame regains its teeth. Measured: the
+  // bot takes exactly one hit per run, always a sniper bolt in loops 7-9.
+  const final = dmg * state.diff.dmgMul * (state.loop >= 7 ? 1.2 : 1);
+  p.hp -= final;
   p.invulnT = 0.5;
   state.combo = 0; state.comboT = 0;
   state.shake = Math.min(14, state.shake + 6);
   state.events.push({ type: 'playerHit', x: p.x, y: p.y });
-  addFloat(state, p.x, p.y - 28, '-' + Math.round(dmg * state.diff.dmgMul), '#FF2E4D');
+  addFloat(state, p.x, p.y - 28, '-' + Math.round(final), '#FF2E4D');
   if (p.hp <= 0) { p.hp = 0; p.alive = false; state.killerType = srcType || state.lastDamager || null; }
 }
 

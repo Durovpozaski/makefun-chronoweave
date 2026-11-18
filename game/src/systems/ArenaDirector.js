@@ -48,6 +48,11 @@ export function layoutPillars(state) {
   state.pillars = pick.map((p) => ({ ...p }));
 }
 
+// PASS 5 COUNTERWEIGHT: loops 8-10 spawn one extra Sniper each. Snipers are
+// the only damage source that ever lands on a strong player (measured: the
+// bot takes exactly one hit per run, always a sniper bolt, loops 7-9) — one
+// more bolt-stream per late wave is pressure the player must actually dodge,
+// not a number tweak on hits that never land.
 export function spawnWave(state, keep) {
   const L = state.loop;
   const elite = L >= 6;
@@ -69,12 +74,12 @@ export function spawnWave(state, keep) {
   }
   else if (L === 6) { add('guardian', 3, true); add('sniper', 2, false); add('bomber', 2, false); add('chaser', 2, false); }
   else if (L === 7) { add('guardian', 3, true); add('sniper', 3, false); add('bomber', 2, false); add('splitter', 2, false); }
-  else if (L === 8) { add('guardian', 4, true); add('sniper', 3, true); add('bomber', 3, false); add('chaser', 2, false); add('splitter', 2, false); }
-  else if (L === 9) { add('guardian', 4, true); add('sniper', 3, true); add('bomber', 3, false); add('chaser', 4, false); add('splitter', 2, true); }
+  else if (L === 8) { add('guardian', 4, true); add('sniper', 4, true); add('bomber', 3, false); add('chaser', 2, false); add('splitter', 2, false); }
+  else if (L === 9) { add('guardian', 4, true); add('sniper', 4, true); add('bomber', 3, false); add('chaser', 4, false); add('splitter', 2, true); }
   else if (L === 10) {
     const c = makeEnemy(state, 'chronarch', 640, 150, false);
     list.push(c); state.boss = c;
-    add('sniper', 2, false); add('chaser', 2, false);
+    add('sniper', 3, false); add('chaser', 2, false);
   }
   // FRAY: a frayed timeline spawns extra Chasers — one per fray (cap 3).
   // The timeout rewind's price, paid at the start of the next loop.
