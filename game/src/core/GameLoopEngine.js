@@ -52,7 +52,7 @@ export function newRun(difficulty, seed) {
     boss: null, bossDefeated: false,
     perLoop: [], loopKills: 0, loopScore: 0, waveTotal: 0,
     bot: false, demo: true, paused: false,
-    shake: 0, flash: 0, slowmoT: 0, hitstopT: 0, stasisT: 0, stasisCd: 0,
+    shake: 0, flash: 0, slowmoT: 0, hitstopT: 0, killJuiceCd: 0, stasisT: 0, stasisCd: 0,
     win: false, loseReason: '', winGrade: null, newBest: false,
     banner: null, events: [],
   };
@@ -141,7 +141,7 @@ function startRewind(state, kind) {
   // (Q/R) or clear rewind is clean. Each fray adds one extra Chaser to the
   // next loop's wave (cap 3) — the price of letting the clock run out.
   if (kind === 'timeout') state.fray = Math.min(FRAY_CAP, (state.fray || 0) + 1);
-  state.slowmoT = 0.5;
+  state.slowmoT = 0.2;
   state.flash = 1;
   state.events.push({ type: 'rewind', x: 640, y: 360 });
 }
@@ -280,10 +280,20 @@ function drainEvents(state, audio) {
       case 'shoot': audio.sfx('shoot'); break;
       case 'echoShoot': audio.sfx('echoShoot'); break;
       case 'shieldBlock': state.shieldBlocks++; audio.sfx('block'); break;
-      case 'shieldBreak': state.shieldBreaks++; state.slowmoT = Math.max(state.slowmoT, 0.18); state.hitstopT = Math.max(state.hitstopT, 0.045); audio.sfx('shieldBreak'); break;
+      case 'shieldBreak': state.shieldBreaks++; state.slowmoT = Math.max(state.slowmoT, 0.08); audio.sfx('shieldBreak'); break;
       case 'crossfire': audio.sfx('crossfire'); break;
       case 'surge': audio.sfx('upgrade'); break;
-      case 'kill': state.slowmoT = Math.max(state.slowmoT, 0.12); audio.sfx('kill'); break;
+      case 'kill':
+        // Kill beat: a brief micro-pulse, gated by a cooldown — a kill must
+        // feel like a hit, never a freeze. 0.03 sim-s is ~0.07s wall at 45%
+        // speed, and it can fire at most once per sim-second, so sustained
+        // killing can never hold the game in slow-mo. The shake + sparks +
+        // float + sfx carry the impact instead of the clock.
+        if (state.slowmoT <= 0 && (state.killJuiceCd || 0) <= 0) {
+          state.slowmoT = 0.03; state.killJuiceCd = 1.0;
+        }
+        state.shake = Math.max(state.shake, 4);
+        audio.sfx('kill'); break;
       case 'dash': audio.sfx('dash'); break;
       case 'detonate': audio.sfx('explode'); break;
       case 'rewind': audio.sfx('rewind'); break;
@@ -309,6 +319,7 @@ function updateFx(state, dt) {
   state.shake = Math.max(0, state.shake - 30 * dt);
   state.flash = Math.max(0, state.flash - dt * 1.4);
   state.slowmoT = Math.max(0, state.slowmoT - dt);
+  state.killJuiceCd = Math.max(0, (state.killJuiceCd || 0) - dt);
 }
 
 export function step(state, input, audio, dt) {
